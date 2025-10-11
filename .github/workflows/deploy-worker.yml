@@ -23,6 +23,16 @@ jobs:
         working-directory: apps/api-worker
         run: pnpm install --frozen-lockfile=false
       - run: npm i -g wrangler
+      - name: Configure trade webhook token
+        working-directory: apps/api-worker
+        env:
+          TRADE_WEBHOOK_TOKEN: ${{ secrets.TRADE_WEBHOOK_TOKEN }}
+        run: |
+          if [ -z "${TRADE_WEBHOOK_TOKEN}" ]; then
+            echo "TRADE_WEBHOOK_TOKEN secret is not configured" >&2
+            exit 1
+          fi
+          echo "${TRADE_WEBHOOK_TOKEN}" | wrangler secret put TRADE_WEBHOOK_TOKEN
       - name: Deploy Worker
         working-directory: apps/api-worker
         run: wrangler deploy
