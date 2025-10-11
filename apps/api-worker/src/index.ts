@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 
 type Bindings = {
   ALPACA_KEY: string;
@@ -13,6 +14,18 @@ type TradeRequest = {
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
+
+app.use(
+  '*',
+  cors({
+    origin: '*',
+    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    allowHeaders: ['Authorization', 'Content-Type'],
+    maxAge: 24 * 60 * 60,
+  })
+);
+
+app.options('/trade', (c) => c.text('', 204));
 
 app.get('/health', (c) => c.text('ok'));
 
