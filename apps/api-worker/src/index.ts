@@ -1,11 +1,33 @@
 import { Hono } from 'hono';
 
-const app = new Hono();
+type Bindings = {
+  ALPACA_KEY: string;
+  ALPACA_SECRET: string;
+  TRADE_WEBHOOK_TOKEN?: string;
+};
+
+const app = new Hono<{ Bindings: Bindings }>();
 
 app.get('/health', (c) => c.text('ok'));
 
 app.post('/trade', async (c) => {
+  const webhookSecret = c.env.TRADE_WEBHOOK_TOKEN;
+  if (!webhookSecret) {
+    return c.json({ error: 'Trading is currently disabled' }, 503);
+  }
+
+  const authHeader = c.req.header('Authorization');
+  if (!authHeader || authHeader !== `Bearer ${webhookSecret}`) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
   const body = await c.req.json();
+  const { symbol, side, qty } = body ?? {};
+
+  if (typeof symbol !== 'string' || typeof side !== 'string' || typeof qty !== 'number') {
+    return c.json({ error: 'Invalid trade payload' }, 400);
+  }
+
   const r = await fetch('https://paper-api.alpaca.markets/v2/orders', {
     method: 'POST',
     headers: {
@@ -14,10 +36,10 @@ app.post('/trade', async (c) => {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      symbol: body.symbol,
-      side: body.side,
+      symbol,
+      side,
       type: 'market',
-      qty: body.qty,
+      qty,
       time_in_force: 'day'
     })
   });
