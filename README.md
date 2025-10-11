@@ -1,0 +1,2 @@
+# goldshore-api
+GoldShore API
