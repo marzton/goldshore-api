@@ -21,11 +21,32 @@ app.post('/trade', async (c) => {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
-  const body = await c.req.json();
-  const { symbol, side, qty } = body ?? {};
+  if (!c.req.header('content-type')?.includes('application/json')) {
+    return c.json({ error: 'Unsupported content type' }, 415);
+  }
 
-  if (typeof symbol !== 'string' || typeof side !== 'string' || typeof qty !== 'number') {
-    return c.json({ error: 'Invalid trade payload' }, 400);
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
+
+  const payload = body as Record<string, unknown> | null;
+  const symbol = typeof payload?.symbol === 'string' ? payload.symbol.trim().toUpperCase() : '';
+  const side = typeof payload?.side === 'string' ? payload.side.toLowerCase() : '';
+  const qty = Number(payload?.qty);
+
+  if (!symbol || !/^[A-Z.]{1,5}$/.test(symbol)) {
+    return c.json({ error: 'Invalid symbol' }, 400);
+  }
+
+  if (side !== 'buy' && side !== 'sell') {
+    return c.json({ error: 'Invalid trade side' }, 400);
+  }
+
+  if (!Number.isFinite(qty) || qty <= 0) {
+    return c.json({ error: 'Invalid quantity' }, 400);
   }
 
   const r = await fetch('https://paper-api.alpaca.markets/v2/orders', {
@@ -43,7 +64,13 @@ app.post('/trade', async (c) => {
       time_in_force: 'day'
     })
   });
-  return c.json(await r.json(), r.ok ? 200 : 400);
+
+  if (!r.ok) {
+    const errorBody = await r.text();
+    return c.json({ error: 'Alpaca order failed', details: errorBody }, 502);
+  }
+
+  return c.json(await r.json(), 200);
 });
 
 export default app;
