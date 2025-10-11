@@ -26,8 +26,9 @@ jobs:
       - name: Configure trade webhook token
         working-directory: apps/api-worker
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          <<: &cloudflare_credentials
+            CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+            CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           TRADE_WEBHOOK_TOKEN: ${{ secrets.TRADE_WEBHOOK_TOKEN }}
         run: |
           if [ -z "${TRADE_WEBHOOK_TOKEN}" ]; then
@@ -39,7 +40,6 @@ jobs:
         working-directory: apps/api-worker
         run: wrangler deploy
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          <<: *cloudflare_credentials
           ALPACA_KEY: ${{ secrets.ALPACA_KEY }}
           ALPACA_SECRET: ${{ secrets.ALPACA_SECRET }}
