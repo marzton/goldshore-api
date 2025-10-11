@@ -28,3 +28,13 @@ Secrets (repo → Settings → Secrets and variables → Actions):
 * ALPACA_SECRET (paper)
 * OPENAI_API_KEY (if used later)
 
+## Phase 1 DNS handoff
+
+Deployment work starts with normalising DNS. Track progress in [`docs/dns/PHASE1_DNS_CHECKLIST.md`](docs/dns/PHASE1_DNS_CHECKLIST.md) and use `scripts/check-dns.sh` to confirm propagation:
+
+```bash
+scripts/check-dns.sh
+```
+
+Override `EXPECTED_*` environment variables if the Cloudflare targets ever change.
+
