@@ -23,6 +23,14 @@ jobs:
         working-directory: apps/api-worker
         run: pnpm install --frozen-lockfile=false
       - run: npm i -g wrangler
+      - name: Configure trade webhook secret
+        working-directory: apps/api-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TRADE_WEBHOOK_TOKEN: ${{ secrets.TRADE_WEBHOOK_TOKEN }}
+        run: |
+          wrangler secret put TRADE_WEBHOOK_TOKEN --text "$TRADE_WEBHOOK_TOKEN"
       - name: Deploy Worker
         working-directory: apps/api-worker
         run: wrangler deploy
