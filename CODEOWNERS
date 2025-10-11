@@ -1,0 +1,4 @@
+/apps/api-worker/*   @goldshore/ops
+/apps/admin/*        @goldshore/dev
+/infra/*             @goldshore/ops
+/.github/*           @goldshore/ops
