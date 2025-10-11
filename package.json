@@ -1,0 +1,16 @@
+{
+  "name": "goldshore",
+  "private": true,
+  "packageManager": "pnpm@9.6.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "pnpm -w --filter ./apps/admin run build && pnpm -w --filter ./apps/api-worker run build",
+    "build:pages": "pnpm -w --filter ./apps/admin run build",
+    "build:worker": "pnpm -w --filter ./apps/api-worker run build",
+    "lint": "echo \"(add eslint later)\"",
+    "check:secrets": "bash ./scripts/verify-secrets.sh || true"
+  }
+}
