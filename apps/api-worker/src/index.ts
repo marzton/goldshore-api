@@ -187,8 +187,9 @@ const requireAccess = async (req: Request, env: Env) => {
     return false;
   }
 
-  const expectedIssuer = `https://${domain}/`;
-  if (payload.iss !== expectedIssuer) {
+  const normalizeIssuer = (issuer: string) => issuer.replace(/\/+$/, '');
+  const expectedIssuer = `https://${domain}`;
+  if (typeof payload.iss !== 'string' || normalizeIssuer(payload.iss) !== normalizeIssuer(expectedIssuer)) {
     return false;
   }
 
