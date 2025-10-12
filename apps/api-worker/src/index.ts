@@ -138,8 +138,7 @@ const getAccessKeys = async (env: Env) => {
 
 const requireAccess = async (req: Request, env: Env) => {
   const token = req.headers.get('cf-access-jwt-assertion');
-  const domain = env.CF_ACCESS_TEAM_DOMAIN;
-  if (!token || !env.CF_ACCESS_AUD || !domain) {
+  if (!token || !env.CF_ACCESS_AUD) {
     return false;
   }
 
@@ -149,12 +148,7 @@ const requireAccess = async (req: Request, env: Env) => {
   }
 
   const header = decodeTokenSegment<{ kid?: string }>(parts[0]);
-  const payload = decodeTokenSegment<{
-    aud?: string | string[];
-    exp?: number;
-    iss?: string;
-    nbf?: number;
-  }>(parts[1]);
+  const payload = decodeTokenSegment<{ aud?: string | string[]; exp?: number; nbf?: number }>(parts[1]);
   if (!header || !payload || !header.kid) {
     return false;
   }
@@ -200,12 +194,6 @@ const requireAccess = async (req: Request, env: Env) => {
 
   const now = Math.floor(Date.now() / 1000);
   if ((typeof payload.exp === 'number' && payload.exp < now) || (typeof payload.nbf === 'number' && payload.nbf > now)) {
-    return false;
-  }
-
-  const normalizeIssuer = (issuer: string) => issuer.replace(/\/+$/, '');
-  const expectedIssuer = `https://${domain}`;
-  if (typeof payload.iss !== 'string' || normalizeIssuer(payload.iss) !== normalizeIssuer(expectedIssuer)) {
     return false;
   }
 
