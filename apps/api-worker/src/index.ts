@@ -18,6 +18,7 @@ type Env = {
   ORDER_ALLOWED_SYMBOLS?: string;
   CF_ACCESS_TEAM_DOMAIN?: string;
   CF_ACCESS_AUD?: string;
+  TRADE_WEBHOOK_TOKEN?: string;
 };
 
 type WorkerExecutionContext = {
@@ -130,8 +131,16 @@ const getAccessKeys = async (env: Env) => {
 };
 
 const requireAccess = async (req: Request, env: Env) => {
+  const sharedSecret = env.TRADE_WEBHOOK_TOKEN;
+  if (sharedSecret) {
+    const auth = req.headers.get('authorization');
+    if (auth === `Bearer ${sharedSecret}`) {
+      return true;
+    }
+  }
+
   const token = req.headers.get('cf-access-jwt-assertion');
-  if (!token || !env.CF_ACCESS_AUD) {
+  if (!token || !env.CF_ACCESS_AUD || !env.CF_ACCESS_TEAM_DOMAIN) {
     return false;
   }
 
