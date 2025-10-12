@@ -1,0 +1,16 @@
+name = "goldshore-api"
+main = "src/index.ts"
+compatibility_date = "2025-10-10"
+
+[vars]
+ENV = "production"
+# Set via `wrangler secret put TRADE_API_TOKEN` to enable authenticated trading.
+
+routes = [
+  { pattern = "api.goldshore.org/*", zone_name = "goldshore.org" }
+]
+
+# Example bindings later:
+# [[kv_namespaces]]
+# binding = "KV_GOLDSHORE"
+# id = "xxxxxxxxxxxxxxxxxxxxx"

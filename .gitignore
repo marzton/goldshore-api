@@ -1,0 +1,15 @@
+# node
+node_modules
+npm-debug.log*
+pnpm-lock.yaml
+yarn.lock
+dist
+build
+# env
+.env
+.env.*
+# editor
+.vscode
+.DS_Store
+# workers
+.worker
