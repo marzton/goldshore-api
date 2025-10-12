@@ -10,6 +10,7 @@ type WorkerEnv = {
   TRADING_ENABLED?: string;
   ORDER_MAX_NOTIONAL?: string;
   ORDER_ALLOWED_SYMBOLS?: string;
+  ALPACA_PROXY_BEARER_TOKEN?: string;
 };
 
 type ExecutionContext = {
@@ -49,6 +50,20 @@ function hit(ip: string, limit = 30, windowMs = 15000) {
   return true;
 }
 
+function hasBearer(req: Request, expected: string) {
+  const auth = req.headers.get("authorization");
+  if (!auth) return false;
+  const prefix = "Bearer ";
+  if (auth.startsWith(prefix)) return auth.slice(prefix.length).trim() === expected;
+  return auth.trim() === expected;
+}
+
+function isAuthenticated(req: Request, env: WorkerEnv) {
+  if (req.headers.get("cf-access-jwt-assertion")) return true;
+  if (!env.ALPACA_PROXY_BEARER_TOKEN) return false;
+  return hasBearer(req, env.ALPACA_PROXY_BEARER_TOKEN);
+}
+
 async function alpacaFetch(env: WorkerEnv, path: string, init: RequestInit = {}) {
   const { base, key, secret } = pickAlpaca(env);
   const headers = new Headers(init.headers);
@@ -75,23 +90,28 @@ export default {
       return txt(r.ok ? "openai-ok" : "openai-fail", { status: r.status });
     }
     if (url.pathname === "/alpaca/ping") {
+      if (!isAuthenticated(req, env)) return txt("unauthorized", { status: 401 });
       const r = await alpacaFetch(env, "/v2/clock");
       return json(await r.json(), { status: r.status });
     }
     if (url.pathname === "/alpaca/account") {
+      if (!isAuthenticated(req, env)) return txt("unauthorized", { status: 401 });
       const r = await alpacaFetch(env, "/v2/account");
       return json(await r.json(), { status: r.status });
     }
     if (url.pathname === "/alpaca/positions") {
+      if (!isAuthenticated(req, env)) return txt("unauthorized", { status: 401 });
       const r = await alpacaFetch(env, "/v2/positions");
       return json(await r.json(), { status: r.status });
     }
     if (url.pathname === "/alpaca/orders" && req.method === "GET") {
+      if (!isAuthenticated(req, env)) return txt("unauthorized", { status: 401 });
       const r = await alpacaFetch(env, "/v2/orders?status=all&limit=50");
       return json(await r.json(), { status: r.status });
     }
     if (url.pathname === "/alpaca/orders" && req.method === "POST") {
       if (env.TRADING_ENABLED !== "true") return txt("trading-disabled", { status: 403 });
+      if (!isAuthenticated(req, env)) return txt("unauthorized", { status: 401 });
 
       const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
       const max = Number(env.ORDER_MAX_NOTIONAL || 0);
