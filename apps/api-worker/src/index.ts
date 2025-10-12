@@ -1,49 +1,227 @@
-import { Hono } from 'hono';
+const CORS_HEADERS = {
+  'access-control-allow-origin': 'https://goldshore.org',
+  'access-control-allow-methods': 'GET,POST,OPTIONS',
+  'access-control-allow-headers': 'content-type,authorization'
+} as const;
 
-type Bindings = {
-  ALPACA_KEY: string;
-  ALPACA_SECRET: string;
-  TRADE_WEBHOOK_TOKEN?: string;
+type Env = {
+  ENV?: string;
+  OPENAI_API_KEY?: string;
+  ALPACA_PAPER_API_KEY_ID?: string;
+  ALPACA_PAPER_API_SECRET_KEY?: string;
+  ALPACA_PAPER_BASE_URL?: string;
+  ALPACA_LIVE_API_KEY_ID?: string;
+  ALPACA_LIVE_API_SECRET_KEY?: string;
+  ALPACA_LIVE_BASE_URL?: string;
+  TRADING_ENABLED?: string;
+  ORDER_MAX_NOTIONAL?: string;
+  ORDER_ALLOWED_SYMBOLS?: string;
 };
 
-const app = new Hono<{ Bindings: Bindings }>();
+type WorkerExecutionContext = {
+  waitUntil(promise: Promise<unknown>): void;
+  passThroughOnException?: () => void;
+};
 
-app.get('/health', (c) => c.text('ok'));
+type RateLimitBucket = {
+  n: number;
+  t: number;
+};
 
-app.post('/trade', async (c) => {
-  const webhookSecret = c.env.TRADE_WEBHOOK_TOKEN;
-  if (!webhookSecret) {
-    return c.json({ error: 'Trading is currently disabled' }, 503);
+const rl = new Map<string, RateLimitBucket>();
+
+const mergeHeaders = (base: HeadersInit, extra?: HeadersInit): Headers => {
+  const merged = new Headers(base);
+
+  if (!extra) {
+    return merged;
   }
 
-  const authHeader = c.req.header('Authorization');
-  if (!authHeader || authHeader !== `Bearer ${webhookSecret}`) {
-    return c.json({ error: 'Unauthorized' }, 401);
+  if (extra instanceof Headers) {
+    extra.forEach((value, key) => merged.set(key, value));
+    return merged;
   }
 
-  const body = await c.req.json();
-  const { symbol, side, qty } = body ?? {};
-
-  if (typeof symbol !== 'string' || typeof side !== 'string' || typeof qty !== 'number') {
-    return c.json({ error: 'Invalid trade payload' }, 400);
+  if (Array.isArray(extra)) {
+    extra.forEach(([key, value]) => merged.set(key, value));
+    return merged;
   }
 
-  const r = await fetch('https://paper-api.alpaca.markets/v2/orders', {
-    method: 'POST',
-    headers: {
-      'APCA-API-KEY-ID': c.env.ALPACA_KEY,
-      'APCA-API-SECRET-KEY': c.env.ALPACA_SECRET,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      symbol,
-      side,
-      type: 'market',
-      qty,
-      time_in_force: 'day'
-    })
+  Object.entries(extra).forEach(([key, value]) => {
+    if (typeof value !== 'undefined') {
+      merged.set(key, String(value));
+    }
   });
-  return c.json(await r.json(), r.ok ? 200 : 400);
-});
 
-export default app;
+  return merged;
+};
+
+const ok = (body: BodyInit | null, init: ResponseInit = {}) =>
+  new Response(body, {
+    ...init,
+    headers: mergeHeaders({ 'content-type': 'text/plain; charset=utf-8', ...CORS_HEADERS }, init.headers)
+  });
+
+const requireAccess = async (req: Request) => {
+  const hdr = req.headers.get('cf-access-jwt-assertion');
+  if (!hdr) {
+    return false;
+  }
+  return true;
+};
+
+const hit = (ip: string, limit = 30, windowMs = 15_000) => {
+  const now = Date.now();
+  const bucket = rl.get(ip) ?? { n: 0, t: now };
+  if (now - bucket.t > windowMs) {
+    rl.set(ip, { n: 1, t: now });
+    return true;
+  }
+  if (bucket.n + 1 > limit) {
+    return false;
+  }
+  rl.set(ip, { n: bucket.n + 1, t: bucket.t });
+  return true;
+};
+
+const redact = (headers: Headers): Headers => {
+  const copy = new Headers(headers);
+  copy.delete('APCA-API-KEY-ID');
+  copy.delete('APCA-API-SECRET-KEY');
+  return copy;
+};
+
+const pickAlpaca = (env: Env) => {
+  const isLive = env.ENV === 'production' && Boolean(env.ALPACA_LIVE_API_KEY_ID);
+  if (isLive) {
+    return {
+      base: env.ALPACA_LIVE_BASE_URL ?? 'https://api.alpaca.markets',
+      key: env.ALPACA_LIVE_API_KEY_ID ?? '',
+      secret: env.ALPACA_LIVE_API_SECRET_KEY ?? ''
+    };
+  }
+  return {
+    base: env.ALPACA_PAPER_BASE_URL ?? 'https://paper-api.alpaca.markets',
+    key: env.ALPACA_PAPER_API_KEY_ID ?? '',
+    secret: env.ALPACA_PAPER_API_SECRET_KEY ?? ''
+  };
+};
+
+const alpacaFetch = (env: Env, path: string, init: RequestInit = {}) => {
+  const { base, key, secret } = pickAlpaca(env);
+  const headers = new Headers(init.headers);
+  headers.set('APCA-API-KEY-ID', key);
+  headers.set('APCA-API-SECRET-KEY', secret);
+  return fetch(`${base}${path}`, { ...init, headers });
+};
+
+const jsonResponse = async (response: Response) => {
+  const payload = await response.text();
+  const headers = mergeHeaders(
+    {
+      ...CORS_HEADERS,
+      'content-type': 'application/json; charset=utf-8'
+    },
+    redact(response.headers)
+  );
+
+  return new Response(payload, {
+    status: response.status,
+    headers
+  });
+};
+
+const handler = {
+  async fetch(req: Request, env: Env, _ctx: WorkerExecutionContext) {
+    const url = new URL(req.url);
+    const ip = req.headers.get('cf-connecting-ip') ?? '0.0.0.0';
+
+    if (req.method === 'OPTIONS') {
+      return ok('');
+    }
+
+    if (!hit(ip)) {
+      return ok('rate-limited', { status: 429 });
+    }
+
+    if (url.pathname === '/' || url.pathname === '/health') {
+      return ok('ok');
+    }
+
+    if (url.pathname === '/ai-ping') {
+      try {
+        const r = await fetch('https://api.openai.com/v1/models', {
+          headers: {
+            Authorization: `Bearer ${env.OPENAI_API_KEY ?? ''}`
+          }
+        });
+        return ok(r.ok ? 'openai-ok' : 'openai-fail', { status: r.status });
+      } catch (error) {
+        return ok('openai-fail', { status: 502 });
+      }
+    }
+
+    if (url.pathname === '/alpaca/clock') {
+      const r = await alpacaFetch(env, '/v2/clock');
+      return jsonResponse(r);
+    }
+
+    if (url.pathname === '/alpaca/account') {
+      const r = await alpacaFetch(env, '/v2/account');
+      return jsonResponse(r);
+    }
+
+    if (url.pathname === '/alpaca/positions') {
+      const r = await alpacaFetch(env, '/v2/positions');
+      return jsonResponse(r);
+    }
+
+    if (url.pathname === '/alpaca/orders' && req.method === 'GET') {
+      const r = await alpacaFetch(env, '/v2/orders?status=all&limit=50');
+      return jsonResponse(r);
+    }
+
+    if (url.pathname === '/alpaca/orders' && req.method === 'POST') {
+      if (env.TRADING_ENABLED !== 'true') {
+        return ok('trading-disabled', { status: 403 });
+      }
+
+      if (!(await requireAccess(req))) {
+        return ok('unauthorized', { status: 401 });
+      }
+
+      const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+      const notional = Number(body.notional ?? 0);
+      const max = Number(env.ORDER_MAX_NOTIONAL ?? 0);
+      if (max > 0 && notional > max) {
+        return ok('exceeds-notional-limit', { status: 400 });
+      }
+
+      if (env.ORDER_ALLOWED_SYMBOLS) {
+        const allow = new Set(
+          String(env.ORDER_ALLOWED_SYMBOLS)
+            .split(',')
+            .map((s) => s.trim().toUpperCase())
+            .filter(Boolean)
+        );
+        const symbol = String(body.symbol ?? '').toUpperCase();
+        if (!allow.has(symbol)) {
+          return ok('symbol-not-allowed', { status: 400 });
+        }
+      }
+
+      const r = await alpacaFetch(env, '/v2/orders', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
+      return jsonResponse(r);
+    }
+
+    return ok('not found', { status: 404 });
+  }
+};
+
+export default handler;

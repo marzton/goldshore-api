@@ -7,9 +7,7 @@
     "build": "tsc -p tsconfig.json || true",
     "deploy": "wrangler deploy"
   },
-  "dependencies": {
-    "hono": "^4.5.10"
-  },
+  "dependencies": {},
   "devDependencies": {
     "typescript": "^5.5.4"
   }
