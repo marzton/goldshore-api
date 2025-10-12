@@ -63,6 +63,11 @@ function isAuthorized(req: Request, env: WorkerEnv) {
   return match[1] === expected;
 }
 
+function requireAuthorization(req: Request, env: WorkerEnv) {
+  if (isAuthorized(req, env)) return null;
+  return txt("unauthorized", { status: 401 });
+}
+
 async function alpacaFetch(env: WorkerEnv, path: string, init: RequestInit = {}) {
   const { base, key, secret } = pickAlpaca(env);
   const headers = new Headers(init.headers);
@@ -93,24 +98,28 @@ export default {
       return json(await r.json(), { status: r.status });
     }
     if (url.pathname === "/alpaca/account") {
-      if (!isAuthorized(req, env)) return txt("unauthorized", { status: 401 });
+      const unauthorized = requireAuthorization(req, env);
+      if (unauthorized) return unauthorized;
       const r = await alpacaFetch(env, "/v2/account");
       return json(await r.json(), { status: r.status });
     }
     if (url.pathname === "/alpaca/positions") {
-      if (!isAuthorized(req, env)) return txt("unauthorized", { status: 401 });
+      const unauthorized = requireAuthorization(req, env);
+      if (unauthorized) return unauthorized;
       const r = await alpacaFetch(env, "/v2/positions");
       return json(await r.json(), { status: r.status });
     }
     if (url.pathname === "/alpaca/orders" && req.method === "GET") {
-      if (!isAuthorized(req, env)) return txt("unauthorized", { status: 401 });
+      const unauthorized = requireAuthorization(req, env);
+      if (unauthorized) return unauthorized;
       const r = await alpacaFetch(env, "/v2/orders?status=all&limit=50");
       return json(await r.json(), { status: r.status });
     }
     if (url.pathname === "/alpaca/orders" && req.method === "POST") {
-      if (env.TRADING_ENABLED !== "true") return txt("trading-disabled", { status: 403 });
+      const unauthorized = requireAuthorization(req, env);
+      if (unauthorized) return unauthorized;
 
-      if (!isAuthorized(req, env)) return txt("unauthorized", { status: 401 });
+      if (env.TRADING_ENABLED !== "true") return txt("trading-disabled", { status: 403 });
 
       const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
       const max = Number(env.ORDER_MAX_NOTIONAL || 0);
