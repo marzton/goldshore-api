@@ -10,6 +10,7 @@ type WorkerEnv = {
   TRADING_ENABLED?: string;
   ORDER_MAX_NOTIONAL?: string;
   ORDER_ALLOWED_SYMBOLS?: string;
+  TRADING_BEARER_TOKEN?: string;
 };
 
 type ExecutionContext = {
@@ -49,6 +50,19 @@ function hit(ip: string, limit = 30, windowMs = 15000) {
   return true;
 }
 
+function isAuthorized(req: Request, env: WorkerEnv) {
+  if (req.headers.get("cf-access-jwt-assertion")) return true;
+
+  const expected = env.TRADING_BEARER_TOKEN;
+  if (!expected) return false;
+
+  const auth = req.headers.get("authorization") || "";
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  if (!match) return false;
+
+  return match[1] === expected;
+}
+
 async function alpacaFetch(env: WorkerEnv, path: string, init: RequestInit = {}) {
   const { base, key, secret } = pickAlpaca(env);
   const headers = new Headers(init.headers);
@@ -79,19 +93,24 @@ export default {
       return json(await r.json(), { status: r.status });
     }
     if (url.pathname === "/alpaca/account") {
+      if (!isAuthorized(req, env)) return txt("unauthorized", { status: 401 });
       const r = await alpacaFetch(env, "/v2/account");
       return json(await r.json(), { status: r.status });
     }
     if (url.pathname === "/alpaca/positions") {
+      if (!isAuthorized(req, env)) return txt("unauthorized", { status: 401 });
       const r = await alpacaFetch(env, "/v2/positions");
       return json(await r.json(), { status: r.status });
     }
     if (url.pathname === "/alpaca/orders" && req.method === "GET") {
+      if (!isAuthorized(req, env)) return txt("unauthorized", { status: 401 });
       const r = await alpacaFetch(env, "/v2/orders?status=all&limit=50");
       return json(await r.json(), { status: r.status });
     }
     if (url.pathname === "/alpaca/orders" && req.method === "POST") {
       if (env.TRADING_ENABLED !== "true") return txt("trading-disabled", { status: 403 });
+
+      if (!isAuthorized(req, env)) return txt("unauthorized", { status: 401 });
 
       const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
       const max = Number(env.ORDER_MAX_NOTIONAL || 0);
