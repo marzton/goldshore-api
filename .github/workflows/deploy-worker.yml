@@ -27,6 +27,7 @@ jobs:
         working-directory: apps/api-worker
         env:
           TRADE_WEBHOOK_TOKEN: ${{ secrets.TRADE_WEBHOOK_TOKEN }}
+          WRANGLER_NON_INTERACTIVE: 'true'
         run: |
           if [ -z "${TRADE_WEBHOOK_TOKEN}" ]; then
             echo "TRADE_WEBHOOK_TOKEN secret is not configured" >&2
