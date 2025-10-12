@@ -169,9 +169,24 @@ const requireAccess = async (req: Request, env: Env) => {
   }
 
   const message = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
-  const signature = base64UrlToUint8Array(parts[2]);
 
-  const verified = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, signature, message);
+  let signature: ArrayBuffer;
+  try {
+    const signatureBytes = base64UrlToUint8Array(parts[2]);
+    signature = signatureBytes.buffer.slice(
+      signatureBytes.byteOffset,
+      signatureBytes.byteOffset + signatureBytes.byteLength
+    );
+  } catch {
+    return false;
+  }
+
+  let verified: boolean;
+  try {
+    verified = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, signature, message);
+  } catch {
+    return false;
+  }
   if (!verified) {
     return false;
   }
