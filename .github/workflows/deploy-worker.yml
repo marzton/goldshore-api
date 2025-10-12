@@ -20,8 +20,7 @@ jobs:
         with: { node-version: '20' }
       - run: corepack enable
       - name: Install worker dependencies
-        working-directory: apps/api-worker
-        run: pnpm install --frozen-lockfile=false
+        run: pnpm install --filter ./apps/api-worker --frozen-lockfile=false
       - name: Deploy Worker
         working-directory: apps/api-worker
         run: pnpm dlx wrangler deploy
