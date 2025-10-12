@@ -3,7 +3,12 @@ main = "src/index.ts"
 compatibility_date = "2025-10-10"
 
 [vars]
-ENV = "production"
+ENV = "staging"
+ALPACA_PAPER_BASE_URL = "https://paper-api.alpaca.markets"
+ALPACA_LIVE_BASE_URL = "https://api.alpaca.markets"
+TRADING_ENABLED = "false"
+ORDER_MAX_NOTIONAL = "5000"
+ORDER_ALLOWED_SYMBOLS = ""
 
 # Add a route after DNS is set:
 # routes = [

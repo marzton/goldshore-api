@@ -1,49 +1,113 @@
-import { Hono } from 'hono';
-
-type Bindings = {
-  ALPACA_KEY: string;
-  ALPACA_SECRET: string;
-  TRADE_WEBHOOK_TOKEN?: string;
+type WorkerEnv = {
+  ENV?: string;
+  OPENAI_API_KEY?: string;
+  ALPACA_PAPER_API_KEY_ID?: string;
+  ALPACA_PAPER_API_SECRET_KEY?: string;
+  ALPACA_PAPER_BASE_URL?: string;
+  ALPACA_LIVE_API_KEY_ID?: string;
+  ALPACA_LIVE_API_SECRET_KEY?: string;
+  ALPACA_LIVE_BASE_URL?: string;
+  TRADING_ENABLED?: string;
+  ORDER_MAX_NOTIONAL?: string;
+  ORDER_ALLOWED_SYMBOLS?: string;
 };
 
-const app = new Hono<{ Bindings: Bindings }>();
+type ExecutionContext = {
+  waitUntil(promise: Promise<unknown>): void;
+  passThroughOnException?: () => void;
+};
 
-app.get('/health', (c) => c.text('ok'));
+type ExportedHandler = {
+  fetch(req: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> | Response;
+};
 
-app.post('/trade', async (c) => {
-  const webhookSecret = c.env.TRADE_WEBHOOK_TOKEN;
-  if (!webhookSecret) {
-    return c.json({ error: 'Trading is currently disabled' }, 503);
-  }
+function pickAlpaca(env: WorkerEnv) {
+  const live = env.ENV === "production" && !!env.ALPACA_LIVE_API_KEY_ID;
+  return live
+    ? { base: env.ALPACA_LIVE_BASE_URL, key: env.ALPACA_LIVE_API_KEY_ID, secret: env.ALPACA_LIVE_API_SECRET_KEY, env: "live" }
+    : { base: env.ALPACA_PAPER_BASE_URL, key: env.ALPACA_PAPER_API_KEY_ID, secret: env.ALPACA_PAPER_API_SECRET_KEY, env: "paper" };
+}
 
-  const authHeader = c.req.header('Authorization');
-  if (!authHeader || authHeader !== `Bearer ${webhookSecret}`) {
-    return c.json({ error: 'Unauthorized' }, 401);
-  }
+const CORS = {
+  "access-control-allow-origin": "https://goldshore.org",
+  "access-control-allow-methods": "GET,POST,OPTIONS",
+  "access-control-allow-headers": "content-type,authorization",
+};
+const txt = (s: string, init: ResponseInit = {}) =>
+  new Response(s, { ...init, headers: { "content-type": "text/plain; charset=utf-8", ...CORS, ...(init.headers || {}) } });
 
-  const body = await c.req.json();
-  const { symbol, side, qty } = body ?? {};
+const json = (obj: unknown, init: ResponseInit = {}) =>
+  new Response(JSON.stringify(obj), { ...init, headers: { "content-type": "application/json; charset=utf-8", ...CORS, ...(init.headers || {}) } });
 
-  if (typeof symbol !== 'string' || typeof side !== 'string' || typeof qty !== 'number') {
-    return c.json({ error: 'Invalid trade payload' }, 400);
-  }
+const rl = new Map<string, { n: number; t: number }>();
+function hit(ip: string, limit = 30, windowMs = 15000) {
+  const now = Date.now();
+  const v = rl.get(ip) || { n: 0, t: now };
+  if (now - v.t > windowMs) { rl.set(ip, { n: 1, t: now }); return true; }
+  if (v.n + 1 > limit) return false;
+  rl.set(ip, { n: v.n + 1, t: v.t });
+  return true;
+}
 
-  const r = await fetch('https://paper-api.alpaca.markets/v2/orders', {
-    method: 'POST',
-    headers: {
-      'APCA-API-KEY-ID': c.env.ALPACA_KEY,
-      'APCA-API-SECRET-KEY': c.env.ALPACA_SECRET,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      symbol,
-      side,
-      type: 'market',
-      qty,
-      time_in_force: 'day'
-    })
-  });
-  return c.json(await r.json(), r.ok ? 200 : 400);
-});
+async function alpacaFetch(env: WorkerEnv, path: string, init: RequestInit = {}) {
+  const { base, key, secret } = pickAlpaca(env);
+  const headers = new Headers(init.headers);
+  headers.set("APCA-API-KEY-ID", key ?? "");
+  headers.set("APCA-API-SECRET-KEY", secret ?? "");
+  return fetch(`${base}${path}`, { ...init, headers });
+}
 
-export default app;
+export default {
+  async fetch(...[req, env, _ctx]: Parameters<ExportedHandler["fetch"]>) {
+    const url = new URL(req.url);
+    const ip = req.headers.get("cf-connecting-ip") || "0.0.0.0";
+    if (req.method === "OPTIONS") return txt("");
+
+    if (!hit(ip)) return txt("rate-limited", { status: 429 });
+
+    if (url.pathname === "/" || url.pathname === "/health") return txt("ok");
+    if (url.pathname === "/env") {
+      const a = pickAlpaca(env);
+      return json({ env: env.ENV, alpaca: a.env, trading_enabled: env.TRADING_ENABLED === "true" });
+    }
+    if (url.pathname === "/ai-ping") {
+      const r = await fetch("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}` } });
+      return txt(r.ok ? "openai-ok" : "openai-fail", { status: r.status });
+    }
+    if (url.pathname === "/alpaca/ping") {
+      const r = await alpacaFetch(env, "/v2/clock");
+      return json(await r.json(), { status: r.status });
+    }
+    if (url.pathname === "/alpaca/account") {
+      const r = await alpacaFetch(env, "/v2/account");
+      return json(await r.json(), { status: r.status });
+    }
+    if (url.pathname === "/alpaca/positions") {
+      const r = await alpacaFetch(env, "/v2/positions");
+      return json(await r.json(), { status: r.status });
+    }
+    if (url.pathname === "/alpaca/orders" && req.method === "GET") {
+      const r = await alpacaFetch(env, "/v2/orders?status=all&limit=50");
+      return json(await r.json(), { status: r.status });
+    }
+    if (url.pathname === "/alpaca/orders" && req.method === "POST") {
+      if (env.TRADING_ENABLED !== "true") return txt("trading-disabled", { status: 403 });
+
+      const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+      const max = Number(env.ORDER_MAX_NOTIONAL || 0);
+      if (max && Number(body.notional || 0) > max) return txt("exceeds-notional-limit", { status: 400 });
+      if (env.ORDER_ALLOWED_SYMBOLS) {
+        const allow = new Set(String(env.ORDER_ALLOWED_SYMBOLS).split(",").map(s => s.trim().toUpperCase()));
+        if (!allow.has(String(body.symbol || "").toUpperCase())) return txt("symbol-not-allowed", { status: 400 });
+      }
+      const r = await alpacaFetch(env, "/v2/orders", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return json(await r.json(), { status: r.status });
+    }
+
+    return txt("not found", { status: 404 });
+  },
+} satisfies ExportedHandler;
