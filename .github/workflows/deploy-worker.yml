@@ -19,6 +19,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
       - run: npm i -g wrangler
+      - name: Install dependencies
+        working-directory: apps/api-worker
+        run: npm install
       - name: Deploy Worker
         working-directory: apps/api-worker
         run: wrangler deploy
