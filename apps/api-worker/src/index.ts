@@ -25,7 +25,7 @@ app.use(
   })
 );
 
-app.options('/trade', (c) => c.text('', 204));
+app.options('*', (c) => c.text('', 204));
 
 app.get('/health', (c) => c.text('ok'));
 
