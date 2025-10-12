@@ -16,6 +16,8 @@ type Env = {
   TRADING_ENABLED?: string;
   ORDER_MAX_NOTIONAL?: string;
   ORDER_ALLOWED_SYMBOLS?: string;
+  CF_ACCESS_TEAM_DOMAIN?: string;
+  CF_ACCESS_AUD?: string;
 };
 
 type WorkerExecutionContext = {
@@ -62,12 +64,144 @@ const ok = (body: BodyInit | null, init: ResponseInit = {}) =>
     headers: mergeHeaders({ 'content-type': 'text/plain; charset=utf-8', ...CORS_HEADERS }, init.headers)
   });
 
-const requireAccess = async (req: Request) => {
-  const hdr = req.headers.get('cf-access-jwt-assertion');
-  if (!hdr) {
+type AccessJwk = JsonWebKey & { kid?: string };
+
+type AccessCertsCacheEntry = {
+  expiry: number;
+  keys: AccessJwk[];
+};
+
+const accessCertsCache = new Map<string, AccessCertsCacheEntry>();
+const ACCESS_CERTS_TTL_MS = 5 * 60 * 1000;
+
+const base64UrlToUint8Array = (input: string): Uint8Array | null => {
+  try {
+    let base64 = input.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = base64.length % 4;
+    if (pad) {
+      base64 += '='.repeat(4 - pad);
+    }
+    const binary = atob(base64);
+    const length = binary.length;
+    const bytes = new Uint8Array(length);
+    for (let i = 0; i < length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  } catch {
+    return null;
+  }
+};
+
+const decodeTokenSegment = <T>(segment: string): T | null => {
+  try {
+    const decoded = base64UrlToUint8Array(segment);
+    if (!decoded) {
+      return null;
+    }
+    return JSON.parse(new TextDecoder().decode(decoded)) as T;
+  } catch {
+    return null;
+  }
+};
+
+const getAccessKeys = async (env: Env) => {
+  const domain = env.CF_ACCESS_TEAM_DOMAIN;
+  if (!domain) {
+    return [];
+  }
+
+  const cached = accessCertsCache.get(domain);
+  const now = Date.now();
+  if (cached && cached.expiry > now) {
+    return cached.keys;
+  }
+
+  try {
+    const res = await fetch(`https://${domain}/cdn-cgi/access/certs`, {
+      headers: { 'cache-control': 'no-store' }
+    });
+    if (!res.ok) {
+      return [];
+    }
+    const { keys } = (await res.json()) as { keys?: AccessJwk[] };
+    const entry = {
+      keys: keys ?? [],
+      expiry: now + ACCESS_CERTS_TTL_MS
+    };
+    accessCertsCache.set(domain, entry);
+    return entry.keys;
+  } catch {
+    return [];
+  }
+};
+
+const requireAccess = async (req: Request, env: Env) => {
+  const token = req.headers.get('cf-access-jwt-assertion');
+  if (!token || !env.CF_ACCESS_AUD) {
     return false;
   }
-  return true;
+
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    return false;
+  }
+
+  const header = decodeTokenSegment<{ kid?: string }>(parts[0]);
+  const payload = decodeTokenSegment<{ aud?: string | string[]; exp?: number; nbf?: number }>(parts[1]);
+  if (!header || !payload || !header.kid) {
+    return false;
+  }
+
+  const keys = await getAccessKeys(env);
+  const jwk = keys.find((key) => key.kid === header.kid);
+  if (!jwk) {
+    return false;
+  }
+
+  let cryptoKey: CryptoKey;
+  try {
+    cryptoKey = await crypto.subtle.importKey(
+      'jwk',
+      jwk,
+      {
+        name: 'RSASSA-PKCS1-v1_5',
+        hash: 'SHA-256'
+      },
+      false,
+      ['verify']
+    );
+  } catch {
+    return false;
+  }
+
+  const message = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
+  const signature = base64UrlToUint8Array(parts[2]);
+  if (!signature) {
+    return false;
+  }
+
+  let verified: boolean;
+  try {
+    const signatureBuffer = signature.buffer as ArrayBuffer;
+    verified = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, signatureBuffer, message);
+  } catch {
+    return false;
+  }
+  if (!verified) {
+    return false;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if ((typeof payload.exp === 'number' && payload.exp < now) || (typeof payload.nbf === 'number' && payload.nbf > now)) {
+    return false;
+  }
+
+  const audience = payload.aud;
+  if (Array.isArray(audience)) {
+    return audience.includes(env.CF_ACCESS_AUD);
+  }
+  return audience === env.CF_ACCESS_AUD;
 };
 
 const hit = (ip: string, limit = 30, windowMs = 15_000) => {
@@ -186,7 +320,7 @@ const handler = {
         return ok('trading-disabled', { status: 403 });
       }
 
-      if (!(await requireAccess(req))) {
+      if (!(await requireAccess(req, env))) {
         return ok('unauthorized', { status: 401 });
       }
 
