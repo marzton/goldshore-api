@@ -11,6 +11,9 @@ type WorkerEnv = {
   ORDER_MAX_NOTIONAL?: string;
   ORDER_ALLOWED_SYMBOLS?: string;
   ALPACA_PROXY_BEARER_TOKEN?: string;
+  CF_ACCESS_TEAM_DOMAIN?: string;
+  CF_ACCESS_AUD?: string;
+  CF_ACCESS_ISS?: string;
 };
 
 type ExecutionContext = {
@@ -58,6 +61,99 @@ function hasBearer(req: Request, expected: string) {
   return auth.trim() === expected;
 }
 
+type AccessJwk = JsonWebKey & { kid?: string };
+
+const accessKeyCache = new Map<string, { keys: AccessJwk[]; expiresAt: number }>();
+const accessCryptoKeyCache = new Map<string, CryptoKey>();
+
+async function getAccessKeys(domain: string) {
+  const cacheKey = domain;
+  const now = Date.now();
+  const cached = accessKeyCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) return cached.keys;
+
+  const response = await fetch(`https://${domain}/cdn-cgi/access/certs`);
+  if (!response.ok) return [] as AccessJwk[];
+
+  const body = (await response.json().catch(() => ({}))) as { keys?: AccessJwk[] };
+  const keys = body.keys ?? [];
+  accessKeyCache.set(cacheKey, { keys, expiresAt: now + 5 * 60_000 });
+  return keys;
+}
+
+function base64UrlDecode(input: string) {
+  const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "===".slice((normalized.length + 3) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function verifyCloudflareAccessJwt(token: string, env: WorkerEnv) {
+  const domain = env.CF_ACCESS_TEAM_DOMAIN;
+  const aud = env.CF_ACCESS_AUD;
+  if (!domain || !aud) return false;
+
+  try {
+    const [headerPart, payloadPart, signaturePart] = token.split(".");
+    if (!headerPart || !payloadPart || !signaturePart) return false;
+
+    const decoder = new TextDecoder();
+    const header = JSON.parse(decoder.decode(base64UrlDecode(headerPart)) || "{}") as {
+      alg?: string;
+      kid?: string;
+    };
+    if (header.alg !== "RS256" || !header.kid) return false;
+
+    const keys = await getAccessKeys(domain);
+    const jwk = keys.find(k => k.kid === header.kid);
+    if (!jwk) return false;
+
+    const cacheKey = `${domain}:${header.kid}`;
+    let cryptoKey = accessCryptoKeyCache.get(cacheKey);
+    if (!cryptoKey) {
+      cryptoKey = await crypto.subtle.importKey(
+        "jwk",
+        jwk,
+        { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+        false,
+        ["verify"],
+      );
+      accessCryptoKeyCache.set(cacheKey, cryptoKey);
+    }
+
+    const encoder = new TextEncoder();
+    const verified = await crypto.subtle
+      .verify("RSASSA-PKCS1-v1_5", cryptoKey, base64UrlDecode(signaturePart), encoder.encode(`${headerPart}.${payloadPart}`))
+      .catch(() => false);
+    if (!verified) return false;
+
+    const payload = JSON.parse(decoder.decode(base64UrlDecode(payloadPart)) || "{}") as {
+      aud?: string | string[];
+      iss?: string;
+      exp?: number;
+      nbf?: number;
+    };
+
+    const now = Math.floor(Date.now() / 1000);
+    if (typeof payload.exp === "number" && payload.exp < now) return false;
+    if (typeof payload.nbf === "number" && payload.nbf > now) return false;
+
+    const audiences = Array.isArray(payload.aud) ? payload.aud : payload.aud ? [payload.aud] : [];
+    if (!audiences.includes(aud)) return false;
+
+    if (env.CF_ACCESS_ISS && payload.iss !== env.CF_ACCESS_ISS) return false;
+
+    return true;
+  } catch (_err) {
+    return false;
+  }
+}
+
+async function isAuthenticated(req: Request, env: WorkerEnv) {
+  const accessToken = req.headers.get("cf-access-jwt-assertion");
+  if (accessToken && (await verifyCloudflareAccessJwt(accessToken, env))) return true;
 async function isAuthenticated(req: Request, env: WorkerEnv) {
   const jwt = req.headers.get("cf-access-jwt-assertion");
   if (jwt) {
