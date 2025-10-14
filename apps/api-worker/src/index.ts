@@ -154,6 +154,19 @@ async function verifyCloudflareAccessJwt(token: string, env: WorkerEnv) {
 async function isAuthenticated(req: Request, env: WorkerEnv) {
   const accessToken = req.headers.get("cf-access-jwt-assertion");
   if (accessToken && (await verifyCloudflareAccessJwt(accessToken, env))) return true;
+async function isAuthenticated(req: Request, env: WorkerEnv) {
+  const jwt = req.headers.get("cf-access-jwt-assertion");
+  if (jwt) {
+    try {
+      const verifyUrl = new URL("/cdn-cgi/access/verify", req.url);
+      const result = await fetch(verifyUrl, {
+        headers: { "cf-access-jwt-assertion": jwt },
+      });
+      if (result.ok) return true;
+    } catch (_err) {
+      // ignore verification failures and fall back to bearer token auth
+    }
+  }
   if (!env.ALPACA_PROXY_BEARER_TOKEN) return false;
   return hasBearer(req, env.ALPACA_PROXY_BEARER_TOKEN);
 }
