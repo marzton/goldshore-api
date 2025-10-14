@@ -19,6 +19,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
       - run: npm i -g wrangler
+      - run: corepack enable
+      - name: Install dependencies
+        run: pnpm install --filter @goldshore/api-worker... --prod --no-frozen-lockfile
       - name: Deploy Worker
         working-directory: apps/api-worker
         run: wrangler deploy
