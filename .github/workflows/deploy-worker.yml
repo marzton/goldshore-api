@@ -1,4 +1,4 @@
-name: Deploy API (Worker GoldShore)
+name: Deploy API (Worker goldshore-api)
 on:
   push:
     branches: [ main ]
@@ -16,10 +16,16 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20' }
-      - run: corepack enable
-      - name: Install worker dependencies
+
+      - name: Setup Node & PNPM
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Enable corepack / install pnpm
+        run: corepack enable
+
+      # 👉 Install this package’s dependencies before bundling
+      - name: Install Worker dependencies
         working-directory: apps/api-worker
         run: pnpm install --frozen-lockfile=false
       - run: npm i -g wrangler
@@ -54,5 +60,6 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ALPACA_KEY: ${{ secrets.ALPACA_KEY }}
           ALPACA_SECRET: ${{ secrets.ALPACA_SECRET }}
