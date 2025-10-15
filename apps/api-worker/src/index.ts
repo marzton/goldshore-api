@@ -1,6 +1,21 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 
+type Env = {
+  ENV?: string;
+  OPENAI_API_KEY?: string;
+  ALPACA_PAPER_API_KEY_ID?: string;
+  ALPACA_PAPER_API_SECRET_KEY?: string;
+  ALPACA_PAPER_BASE_URL?: string;
+  ALPACA_LIVE_API_KEY_ID?: string;
+  ALPACA_LIVE_API_SECRET_KEY?: string;
+  ALPACA_LIVE_BASE_URL?: string;
+  TRADING_ENABLED?: string;
+  ORDER_MAX_NOTIONAL?: string;
+  ORDER_ALLOWED_SYMBOLS?: string;
+  CF_ACCESS_TEAM_DOMAIN?: string;
+  CF_ACCESS_AUD?: string;
+  TRADE_WEBHOOK_TOKEN?: string;
 type Bindings = {
   ALPACA_KEY: string;
   ALPACA_SECRET: string;
@@ -56,6 +71,37 @@ app.post('/trade', async (c) => {
     return c.json({ error: 'Symbol is required and must be <= 10 characters' }, 422);
   }
 
+  try {
+    const res = await fetch(`https://${domain}/cdn-cgi/access/certs`, {
+      headers: { 'cache-control': 'no-store' }
+    });
+    if (!res.ok) {
+      return [];
+    }
+    const { keys } = (await res.json()) as { keys?: AccessJwk[] };
+    const entry = {
+      keys: keys ?? [],
+      expiry: now + ACCESS_CERTS_TTL_MS
+    };
+    accessCertsCache.set(domain, entry);
+    return entry.keys;
+  } catch {
+    return [];
+  }
+};
+
+const requireAccess = async (req: Request, env: Env) => {
+  const sharedSecret = env.TRADE_WEBHOOK_TOKEN;
+  if (sharedSecret) {
+    const auth = req.headers.get('authorization');
+    if (auth === `Bearer ${sharedSecret}`) {
+      return true;
+    }
+  }
+
+  const token = req.headers.get('cf-access-jwt-assertion');
+  if (!token || !env.CF_ACCESS_AUD || !env.CF_ACCESS_TEAM_DOMAIN) {
+    return false;
   if (side !== 'buy' && side !== 'sell') {
     return c.json({ error: "Side must be either 'buy' or 'sell'" }, 422);
   }
