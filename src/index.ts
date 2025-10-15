@@ -26,10 +26,7 @@ const originMatches = (origin: string, pattern: string) => {
 
 const corsHeaders = (env: Env, req: Request) => {
   const origin = req.headers.get("Origin") || "";
-  const allow = (env.CORS_ALLOWED_ORIGINS || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const allowed = buildAllowedOrigins(env.CORS_ALLOWED_ORIGINS || "");
   const headers: Record<string, string> = {
     "Access-Control-Allow-Methods": ALLOWED_METHODS,
     "Access-Control-Allow-Headers": ALLOWED_HEADERS,
