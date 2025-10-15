@@ -1,0 +1,16 @@
+{
+  "name": "@goldshore/api-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "tsc -p tsconfig.json || true",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "hono": "^4.5.10"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}
