@@ -3,12 +3,17 @@ main = "src/index.ts"
 compatibility_date = "2025-10-10"
 
 [vars]
-ENV = "production"
-# Set via `wrangler secret put TRADE_API_TOKEN` to enable authenticated trading.
+ENV = "staging"
+ALPACA_PAPER_BASE_URL = "https://paper-api.alpaca.markets"
+ALPACA_LIVE_BASE_URL = "https://api.alpaca.markets"
+TRADING_ENABLED = "false"
+ORDER_MAX_NOTIONAL = "5000"
+ORDER_ALLOWED_SYMBOLS = ""
 
-routes = [
-  { pattern = "api.goldshore.org/*", zone_name = "goldshore.org" }
-]
+# Add a route after DNS is set:
+# routes = [
+#   { pattern = "api.goldshore.org/*", zone_name = "goldshore.org" }
+# ]
 
 # Example bindings later:
 # [[kv_namespaces]]

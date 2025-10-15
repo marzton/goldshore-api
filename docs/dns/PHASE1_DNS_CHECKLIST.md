@@ -31,7 +31,7 @@ nslookup api.goldshore.org
 
 ## 4. Domain attachments
 - [ ] Cloudflare Pages project `goldshore-web` has `goldshore.org` and `www.goldshore.org` verified.
-- [ ] Cloudflare Worker service `goldshore-api` has the route `api.goldshore.org/*` configured in Wrangler.
+- [ ] Cloudflare Worker service `GoldShore` has the route `api.goldshore.org/*`.
 
 ## 5. SSL/TLS
 - [ ] Cloudflare SSL/TLS mode is **Full (strict)**.

@@ -1,5 +1,5 @@
 {
-  "name": "goldshore",
+  "name": "goldshore-api",
   "private": true,
   "packageManager": "pnpm@9.6.0",
   "workspaces": [
