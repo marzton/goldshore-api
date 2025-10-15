@@ -20,6 +20,10 @@ app.use(
   cors({
     origin: '*',
     allowMethods: ['GET', 'POST', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization']
+  })
+);
+
     allowHeaders: ['Authorization', 'Content-Type'],
     maxAge: 24 * 60 * 60,
   })
@@ -28,6 +32,8 @@ app.use(
 app.options('*', (c) => c.text('', 204));
 
 app.get('/health', (c) => c.text('ok'));
+
+app.options('/trade', (c) => c.text('', 204));
 
 app.post('/trade', async (c) => {
   const sharedSecret = c.env.TRADE_API_TOKEN;
