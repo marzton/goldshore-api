@@ -121,6 +121,8 @@ export default {
       return txt(r.ok ? "openai-ok" : "openai-fail", { status: r.status });
     }
     if (url.pathname === "/alpaca/ping") {
+      const auth = requireAlpacaAuth(req, env);
+      if (auth) return auth;
       const r = await alpacaFetch(env, "/v2/clock");
       return json(await r.json(), { status: r.status });
     }
