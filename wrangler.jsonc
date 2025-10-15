@@ -8,7 +8,7 @@
   "kv_namespaces": [
     { "binding": "KV_BINDING", "id": "578fc33519014f418bd9712c61f593db" }
   ],
-  // Cloudflare AI binding for /ai endpoint
+  // Cloudflare AI binding for /ai endpoint (must be declared under "ai")
   "ai": {
     "binding": "AI"
   },
