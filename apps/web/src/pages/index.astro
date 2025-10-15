@@ -1,0 +1,21 @@
+---
+import Base from '../layouts/Base.astro';
+import Hero from '../components/Hero.astro';
+import AdSlot from '../components/AdSlot.astro';
+---
+<Base>
+  <Hero />
+  <section class="grid grid-3" style="margin-top:2rem">
+    <article class="card">
+      <h3>Bridgekeeper</h3>
+      <p class="muted">Narrative risk, media forensics, and threat modeling.</p>
+      <a class="btn" href="/services/bridgekeeper">Explore</a>
+    </article>
+    <article class="card">
+      <h3>Banproof</h3>
+      <p class="muted">Operational resilience for creators and small teams.</p>
+      <a class="btn" href="/services/banproof">Explore</a>
+    </article>
+    <AdSlot />
+  </section>
+</Base>

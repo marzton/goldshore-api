@@ -1,0 +1,24 @@
+---
+import '../styles/theme.css';
+import Header from '../components/Header.astro';
+const { title = 'Gold Shore Labs', description = 'AI-driven tools and strategy for operators and traders.' } = Astro.props;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" href="/logo.svg" />
+  </head>
+  <body>
+    <Header />
+    <main class="container">
+      <slot />
+    </main>
+    <footer class="container" style="padding:2rem 1.25rem;color:var(--gs-muted);border-top:1px solid #222;margin-top:2rem">
+      © {new Date().getFullYear()} Gold Shore Labs • Islip Terrace, NY
+    </footer>
+  </body>
+  </html>
