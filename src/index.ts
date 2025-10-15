@@ -8,8 +8,21 @@ export interface Env {
 const ALLOWED_METHODS = "GET,POST,DELETE,OPTIONS";
 const ALLOWED_HEADERS = "Authorization,Content-Type";
 
-const escapeRegExp = (value: string) =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRegex = (value: string) => value.replace(/[-/\\^$+?.()|[\]{}]/g, "\\$&");
+
+const originMatches = (origin: string, pattern: string) => {
+  if (!pattern) return false;
+  if (pattern === "*") {
+    return origin.length > 0;
+  }
+
+  if (!pattern.includes("*")) {
+    return origin === pattern;
+  }
+
+  const regex = new RegExp(`^${escapeRegex(pattern).replace(/\\\*/g, ".*")}$`);
+  return regex.test(origin);
+};
 
 const corsHeaders = (env: Env, req: Request) => {
   const origin = req.headers.get("Origin") || "";
@@ -23,17 +36,9 @@ const corsHeaders = (env: Env, req: Request) => {
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin"
   };
-  const matchesOrigin = allow.some((entry) => {
-    if (entry === "*") return true;
-    if (entry.includes("*")) {
-      const pattern = new RegExp(
-        `^${entry.split("*").map(escapeRegExp).join(".*")}$`
-      );
-      return pattern.test(origin);
-    }
-    return entry === origin;
-  });
-  if (matchesOrigin) headers["Access-Control-Allow-Origin"] = origin;
+  if (origin && allow.some((pattern) => originMatches(origin, pattern))) {
+    headers["Access-Control-Allow-Origin"] = origin;
+  }
   return headers;
 };
 
@@ -81,19 +86,22 @@ export default {
       );
     }
 
+    const requiresAccess =
+      url.pathname.startsWith("/v1/") ||
+      url.pathname === "/kv" ||
+      url.pathname === "/ai";
+
+    if (requiresAccess && !requireAccess(req)) {
+      return unauthorized(CH);
+    }
+
     if (url.pathname === "/kv") {
-      if (!requireAccess(req)) {
-        return unauthorized(CH);
-      }
       await env.KV_BINDING.put("demo", "Hello from Goldshore!");
       const val = await env.KV_BINDING.get("demo");
       return json({ ok: true, value: val }, 200, CH);
     }
 
     if (url.pathname === "/ai") {
-      if (!requireAccess(req)) {
-        return unauthorized(CH);
-      }
       const input = { prompt: "Tell me a short joke about Cloudflare." };
       const res = await env.AI.run("@cf/meta/llama-3-8b-instruct", input);
       return json(
@@ -108,9 +116,7 @@ export default {
     }
 
     if (url.pathname.startsWith("/v1/")) {
-      if (!requireAccess(req)) {
-        return unauthorized(CH);
-      }
+      // Protected routes should execute below.
     }
 
     return new Response("Not Found", { status: 404, headers: CH });
