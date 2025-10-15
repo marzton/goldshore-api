@@ -54,6 +54,25 @@ jobs:
           wrangler secret put ALPACA_KEY --text "${ALPACA_KEY}"
           wrangler secret put ALPACA_SECRET --text "${ALPACA_SECRET}"
           wrangler secret put TRADE_WEBHOOK_TOKEN --text "${TRADE_WEBHOOK_TOKEN}"
+      - name: Configure trade webhook secret
+        working-directory: apps/api-worker
+        run: |
+          echo "${TRADE_WEBHOOK_TOKEN}" | wrangler secret put TRADE_WEBHOOK_TOKEN
+        env:
+          TRADE_WEBHOOK_TOKEN: ${{ secrets.TRADE_WEBHOOK_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Configure trade webhook token
+        working-directory: apps/api-worker
+        env:
+          TRADE_WEBHOOK_TOKEN: ${{ secrets.TRADE_WEBHOOK_TOKEN }}
+          WRANGLER_NON_INTERACTIVE: 'true'
+        run: |
+          if [ -z "${TRADE_WEBHOOK_TOKEN}" ]; then
+            echo "TRADE_WEBHOOK_TOKEN secret is not configured" >&2
+            exit 1
+          fi
+          echo "${TRADE_WEBHOOK_TOKEN}" | wrangler secret put TRADE_WEBHOOK_TOKEN
       - name: Deploy Worker
         working-directory: apps/api-worker
         run: wrangler deploy
