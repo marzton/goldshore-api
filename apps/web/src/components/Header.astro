@@ -1,0 +1,18 @@
+---
+const links = [
+  { href: '/', label: 'Home' },
+  { href: '/services', label: 'Services' },
+  { href: '/blog', label: 'Blog' },
+  { href: '/about', label: 'About' },
+  { href: '/contact', label: 'Contact' }
+];
+---
+<header class="container" style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem">
+  <a href="/" aria-label="Gold Shore Labs">
+    <img src="/logo.svg" alt="Gold Shore Labs" width="160" height="40" />
+  </a>
+  <nav style="display:flex;gap:1rem">
+    {links.map(l => <a href={l.href}>{l.label}</a>)}
+  </nav>
+</header>
+<hr style="border:0;border-top:1px solid #222;margin:0" />

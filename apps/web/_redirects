@@ -1,0 +1,6 @@
+# Handy shortlinks / fallbacks
+/home          /              301
+/services/ai   /services      302
+
+# keep API on the custom domain (optional convenience)
+# /api/*        https://api.goldshore.org/:splat  200
