@@ -187,8 +187,16 @@ const requireAccess = async (req: Request, env: Env) => {
     return false;
   }
 
-  const expectedIssuer = `https://${domain}/`;
-  if (payload.iss !== expectedIssuer) {
+  const normalizeIssuer = (issuer: string) => {
+    try {
+      const url = new URL(issuer);
+      return `${url.protocol}//${url.hostname}`.toLowerCase();
+    } catch {
+      return issuer.replace(/\/+$/, '').toLowerCase();
+    }
+  };
+  const expectedIssuer = domain.startsWith('http://') || domain.startsWith('https://') ? domain : `https://${domain}`;
+  if (typeof payload.iss !== 'string' || normalizeIssuer(payload.iss) !== normalizeIssuer(expectedIssuer)) {
     return false;
   }
 
