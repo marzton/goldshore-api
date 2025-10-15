@@ -8,6 +8,9 @@ export interface Env {
 const ALLOWED_METHODS = "GET,POST,DELETE,OPTIONS";
 const ALLOWED_HEADERS = "Authorization,Content-Type";
 
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 const corsHeaders = (env: Env, req: Request) => {
   const origin = req.headers.get("Origin") || "";
   const allow = (env.CORS_ALLOWED_ORIGINS || "")
@@ -20,7 +23,17 @@ const corsHeaders = (env: Env, req: Request) => {
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin"
   };
-  if (allow.includes(origin)) headers["Access-Control-Allow-Origin"] = origin;
+  const matchesOrigin = allow.some((entry) => {
+    if (entry === "*") return true;
+    if (entry.includes("*")) {
+      const pattern = new RegExp(
+        `^${entry.split("*").map(escapeRegExp).join(".*")}$`
+      );
+      return pattern.test(origin);
+    }
+    return entry === origin;
+  });
+  if (matchesOrigin) headers["Access-Control-Allow-Origin"] = origin;
   return headers;
 };
 
