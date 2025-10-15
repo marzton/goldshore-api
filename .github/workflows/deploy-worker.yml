@@ -21,7 +21,15 @@ jobs:
       - run: corepack enable
       - name: Install dependencies
         run: pnpm install
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.6.0
+      - name: Install dependencies
+        run: pnpm install --filter ./apps/api-worker --prod
       - run: npm i -g wrangler
+      - run: corepack enable
+      - name: Install dependencies
+        run: pnpm install --filter @goldshore/api-worker... --prod --no-frozen-lockfile
       - name: Deploy Worker
         working-directory: apps/api-worker
         run: wrangler deploy
