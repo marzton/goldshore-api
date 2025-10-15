@@ -34,6 +34,18 @@ const json = (
     headers: { "Content-Type": "application/json; charset=utf-8", ...headers }
   });
 
+const unauthorized = (headers: Record<string, string>) =>
+  json({ error: "Unauthorized" }, 401, {
+    ...headers,
+    "Cache-Control": "no-store"
+  });
+
+const requireAccess = (req: Request) => {
+  const jwt = req.headers.get("CF-Access-Jwt-Assertion");
+  const email = req.headers.get("CF-Access-Authenticated-User-Email");
+  return Boolean((jwt && jwt.trim()) || (email && email.trim()));
+};
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
@@ -57,12 +69,18 @@ export default {
     }
 
     if (url.pathname === "/kv") {
+      if (!requireAccess(req)) {
+        return unauthorized(CH);
+      }
       await env.KV_BINDING.put("demo", "Hello from Goldshore!");
       const val = await env.KV_BINDING.get("demo");
       return json({ ok: true, value: val }, 200, CH);
     }
 
     if (url.pathname === "/ai") {
+      if (!requireAccess(req)) {
+        return unauthorized(CH);
+      }
       const input = { prompt: "Tell me a short joke about Cloudflare." };
       const res = await env.AI.run("@cf/meta/llama-3-8b-instruct", input);
       return json(
@@ -74,6 +92,12 @@ export default {
         200,
         CH
       );
+    }
+
+    if (url.pathname.startsWith("/v1/")) {
+      if (!requireAccess(req)) {
+        return unauthorized(CH);
+      }
     }
 
     return new Response("Not Found", { status: 404, headers: CH });
