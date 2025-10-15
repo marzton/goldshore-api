@@ -8,9 +8,7 @@
   "kv_namespaces": [
     { "binding": "KV_BINDING", "id": "578fc33519014f418bd9712c61f593db" }
   ],
-  "bindings": [
-    { "type": "ai", "name": "AI" }
-  ],
+  "ai": { "binding": "AI" },
   "vars": {
     "CORS_ALLOWED_ORIGINS": "https://goldshore.org, https://trade.goldshore.org",
     "API_VERSION": "v1"

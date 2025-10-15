@@ -8,19 +8,84 @@ export interface Env {
 const ALLOWED_METHODS = "GET,POST,DELETE,OPTIONS";
 const ALLOWED_HEADERS = "Authorization,Content-Type";
 
+const escapeRegex = (input: string) =>
+  input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+type AllowedOrigins = {
+  allowAny: boolean;
+  literals: Set<string>;
+  patterns: Array<{ source: string; regex: RegExp }>;
+};
+
+const allowedOriginsCache = new Map<string, AllowedOrigins>();
+
+const buildAllowedOrigins = (raw: string): AllowedOrigins => {
+  if (allowedOriginsCache.has(raw)) {
+    return allowedOriginsCache.get(raw)!;
+  }
+
+  const parsed: AllowedOrigins = {
+    allowAny: false,
+    literals: new Set<string>(),
+    patterns: []
+  };
+
+  for (const entry of raw.split(",")) {
+    const allowed = entry.trim();
+    if (!allowed) continue;
+
+    if (allowed === "*") {
+      parsed.allowAny = true;
+      continue;
+    }
+
+    if (!allowed.includes("*")) {
+      parsed.literals.add(allowed);
+      continue;
+    }
+
+    const pattern = `^${allowed
+      .split("*")
+      .map(escapeRegex)
+      .join(".*")}$`;
+
+    try {
+      parsed.patterns.push({ source: allowed, regex: new RegExp(pattern) });
+    } catch (error) {
+      console.warn("Invalid CORS origin pattern", allowed, error);
+    }
+  }
+
+  allowedOriginsCache.set(raw, parsed);
+  return parsed;
+};
+
+const originMatches = (allowed: AllowedOrigins, origin: string) => {
+  if (allowed.allowAny) return "*";
+  if (allowed.literals.has(origin)) return origin;
+
+  for (const { regex } of allowed.patterns) {
+    if (regex.test(origin)) return origin;
+  }
+
+  return null;
+};
+
 const corsHeaders = (env: Env, req: Request) => {
   const origin = req.headers.get("Origin") || "";
-  const allow = (env.CORS_ALLOWED_ORIGINS || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const allowed = buildAllowedOrigins(env.CORS_ALLOWED_ORIGINS || "");
   const headers: Record<string, string> = {
     "Access-Control-Allow-Methods": ALLOWED_METHODS,
     "Access-Control-Allow-Headers": ALLOWED_HEADERS,
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin"
   };
-  if (allow.includes(origin)) headers["Access-Control-Allow-Origin"] = origin;
+  if (origin) {
+    const matched = originMatches(allowed, origin);
+    if (matched) headers["Access-Control-Allow-Origin"] = matched;
+  } else if (allowed.allowAny) {
+    headers["Access-Control-Allow-Origin"] = "*";
+  }
   return headers;
 };
 
