@@ -281,6 +281,17 @@ const requireAccess = async (req: Request, env: Env) => {
   }
 
   const message = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
+  const signature = (() => {
+    try {
+      return base64UrlToUint8Array(parts[2]);
+    } catch {
+      return null;
+    }
+  })();
+  if (!signature) {
+    return false;
+  }
+
 
   let signature: ArrayBuffer;
   try {
