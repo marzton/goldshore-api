@@ -22,8 +22,28 @@ app.post('/trade', async (c) => {
     return c.json({ error: 'Trading is currently disabled' }, 503);
   }
 
-  const authHeader = c.req.header('Authorization');
-  if (!authHeader || authHeader !== `Bearer ${webhookSecret}`) {
+  const authHeader = c.req.header('Authorization') ?? '';
+  const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
+  const providedToken = bearerMatch?.[1]?.trim() ?? '';
+
+  if (!providedToken) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const encoder = new TextEncoder();
+  const expectedBytes = encoder.encode(webhookSecret);
+  const providedBytes = encoder.encode(providedToken);
+
+  if (expectedBytes.length !== providedBytes.length) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  let mismatch = 0;
+  for (let i = 0; i < expectedBytes.length; i += 1) {
+    mismatch |= expectedBytes[i] ^ providedBytes[i];
+  }
+
+  if (mismatch !== 0) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
