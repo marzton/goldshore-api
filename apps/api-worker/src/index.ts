@@ -1,34 +1,74 @@
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 
 type Bindings = {
   ALPACA_KEY: string;
   ALPACA_SECRET: string;
-  TRADE_WEBHOOK_TOKEN?: string;
+  TRADE_API_TOKEN?: string;
+};
+
+type TradeRequest = {
+  symbol: string;
+  side: 'buy' | 'sell';
+  qty: number;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
 
+app.use(
+  '*',
+  cors({
+    origin: '*',
+    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    allowHeaders: ['Authorization', 'Content-Type'],
+    maxAge: 24 * 60 * 60,
+  })
+);
+
+app.options('*', (c) => c.text('', 204));
+
 app.get('/health', (c) => c.text('ok'));
 
 app.post('/trade', async (c) => {
-  const webhookSecret = c.env.TRADE_WEBHOOK_TOKEN;
-  if (!webhookSecret) {
-    return c.json({ error: 'Trading is currently disabled' }, 503);
+  const sharedSecret = c.env.TRADE_API_TOKEN;
+  const authHeader = c.req.header('authorization');
+
+  if (!sharedSecret) {
+    return c.json({ error: 'Trading is not configured on this deployment.' }, 503);
   }
 
-  const authHeader = c.req.header('Authorization');
-  if (!authHeader || authHeader !== `Bearer ${webhookSecret}`) {
+  if (!authHeader || authHeader !== `Bearer ${sharedSecret}`) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
-  const body = await c.req.json();
-  const { symbol, side, qty } = body ?? {};
-
-  if (typeof symbol !== 'string' || typeof side !== 'string' || typeof qty !== 'number') {
-    return c.json({ error: 'Invalid trade payload' }, 400);
+  let body: Partial<TradeRequest>;
+  try {
+    body = await c.req.json<Partial<TradeRequest>>();
+  } catch (error) {
+    return c.json({ error: 'Invalid JSON payload' }, 400);
   }
 
-  const r = await fetch('https://paper-api.alpaca.markets/v2/orders', {
+  const symbol = typeof body.symbol === 'string' ? body.symbol.trim().toUpperCase() : '';
+  const side = body.side;
+  const qty = typeof body.qty === 'number' ? body.qty : Number.NaN;
+
+  if (!symbol || symbol.length > 10) {
+    return c.json({ error: 'Symbol is required and must be <= 10 characters' }, 422);
+  }
+
+  if (side !== 'buy' && side !== 'sell') {
+    return c.json({ error: "Side must be either 'buy' or 'sell'" }, 422);
+  }
+
+  if (!Number.isFinite(qty) || qty <= 0) {
+    return c.json({ error: 'Quantity must be a positive number' }, 422);
+  }
+
+  if (!c.env.ALPACA_KEY || !c.env.ALPACA_SECRET) {
+    return c.json({ error: 'Trading credentials are not configured.' }, 503);
+  }
+
+  const alpacaResponse = await fetch('https://paper-api.alpaca.markets/v2/orders', {
     method: 'POST',
     headers: {
       'APCA-API-KEY-ID': c.env.ALPACA_KEY,
@@ -43,7 +83,19 @@ app.post('/trade', async (c) => {
       time_in_force: 'day'
     })
   });
-  return c.json(await r.json(), r.ok ? 200 : 400);
+
+  if (!alpacaResponse.ok) {
+    return c.json(
+      {
+        error: 'Alpaca rejected the order',
+        status: alpacaResponse.status,
+        details: await alpacaResponse.text()
+      },
+      502
+    );
+  }
+
+  return c.json(await alpacaResponse.json());
 });
 
 export default app;
