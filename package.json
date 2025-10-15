@@ -1,16 +1,14 @@
 {
   "name": "goldshore-api",
   "private": true,
-  "packageManager": "pnpm@9.6.0",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "type": "module",
   "scripts": {
-    "build": "pnpm -w --filter ./apps/admin run build && pnpm -w --filter ./apps/api-worker run build",
-    "build:pages": "pnpm -w --filter ./apps/admin run build",
-    "build:worker": "pnpm -w --filter ./apps/api-worker run build",
-    "lint": "echo \"(add eslint later)\"",
-    "check:secrets": "bash ./scripts/verify-secrets.sh || true"
+    "dev": "wrangler dev",
+    "build": "tsc -p tsconfig.json",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251011.0",
+    "typescript": "^5.5.4"
   }
 }
