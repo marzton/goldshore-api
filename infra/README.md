@@ -7,4 +7,4 @@
 
 ## DNS
 - `goldshore.org` → Pages project (admin)
-- `api.goldshore.org/*` → Worker route → Service: `goldshore-api`
+- `api.goldshore.org/*` → Worker route → Service: `GoldShore`
