@@ -1,171 +1,98 @@
-const CORS_HEADERS = {
-  'access-control-allow-origin': 'https://goldshore.org',
-  'access-control-allow-methods': 'GET,POST,OPTIONS',
-  'access-control-allow-headers': 'content-type,authorization'
-} as const;
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 
-type Env = {
-  ENV?: string;
-  OPENAI_API_KEY?: string;
-  ALPACA_PAPER_API_KEY_ID?: string;
-  ALPACA_PAPER_API_SECRET_KEY?: string;
-  ALPACA_PAPER_BASE_URL?: string;
-  ALPACA_LIVE_API_KEY_ID?: string;
-  ALPACA_LIVE_API_SECRET_KEY?: string;
-  ALPACA_LIVE_BASE_URL?: string;
-  TRADING_ENABLED?: string;
-  ORDER_MAX_NOTIONAL?: string;
-  ORDER_ALLOWED_SYMBOLS?: string;
-  CF_ACCESS_TEAM_DOMAIN?: string;
-  CF_ACCESS_AUD?: string;
+type Bindings = {
+  ALPACA_KEY: string;
+  ALPACA_SECRET: string;
+  TRADE_API_TOKEN?: string;
 };
 
-type WorkerExecutionContext = {
-  waitUntil(promise: Promise<unknown>): void;
-  passThroughOnException?: () => void;
+type TradeRequest = {
+  symbol: string;
+  side: 'buy' | 'sell';
+  qty: number;
 };
 
-type RateLimitBucket = {
-  n: number;
-  t: number;
-};
+const app = new Hono<{ Bindings: Bindings }>();
 
-const rl = new Map<string, RateLimitBucket>();
+app.use(
+  '*',
+  cors({
+    origin: '*',
+    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    allowHeaders: ['Authorization', 'Content-Type'],
+    maxAge: 24 * 60 * 60,
+  })
+);
 
-const mergeHeaders = (base: HeadersInit, extra?: HeadersInit): Headers => {
-  const merged = new Headers(base);
+app.options('*', (c) => c.text('', 204));
 
-  if (!extra) {
-    return merged;
+app.get('/health', (c) => c.text('ok'));
+
+app.post('/trade', async (c) => {
+  const sharedSecret = c.env.TRADE_API_TOKEN;
+  const authHeader = c.req.header('authorization');
+
+  if (!sharedSecret) {
+    return c.json({ error: 'Trading is not configured on this deployment.' }, 503);
   }
 
-  if (extra instanceof Headers) {
-    extra.forEach((value, key) => merged.set(key, value));
-    return merged;
+  if (!authHeader || authHeader !== `Bearer ${sharedSecret}`) {
+    return c.json({ error: 'Unauthorized' }, 401);
   }
 
-  if (Array.isArray(extra)) {
-    extra.forEach(([key, value]) => merged.set(key, value));
-    return merged;
+  let body: Partial<TradeRequest>;
+  try {
+    body = await c.req.json<Partial<TradeRequest>>();
+  } catch (error) {
+    return c.json({ error: 'Invalid JSON payload' }, 400);
   }
 
-  Object.entries(extra).forEach(([key, value]) => {
-    if (typeof value !== 'undefined') {
-      merged.set(key, String(value));
-    }
+  const symbol = typeof body.symbol === 'string' ? body.symbol.trim().toUpperCase() : '';
+  const side = body.side;
+  const qty = typeof body.qty === 'number' ? body.qty : Number.NaN;
+
+  if (!symbol || symbol.length > 10) {
+    return c.json({ error: 'Symbol is required and must be <= 10 characters' }, 422);
+  }
+
+  if (side !== 'buy' && side !== 'sell') {
+    return c.json({ error: "Side must be either 'buy' or 'sell'" }, 422);
+  }
+
+  if (!Number.isFinite(qty) || qty <= 0) {
+    return c.json({ error: 'Quantity must be a positive number' }, 422);
+  }
+
+  if (!c.env.ALPACA_KEY || !c.env.ALPACA_SECRET) {
+    return c.json({ error: 'Trading credentials are not configured.' }, 503);
+  }
+
+  const alpacaResponse = await fetch('https://paper-api.alpaca.markets/v2/orders', {
+    method: 'POST',
+    headers: {
+      'APCA-API-KEY-ID': c.env.ALPACA_KEY,
+      'APCA-API-SECRET-KEY': c.env.ALPACA_SECRET,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      symbol,
+      side,
+      type: 'market',
+      qty,
+      time_in_force: 'day'
+    })
   });
 
-  return merged;
-};
-
-const ok = (body: BodyInit | null, init: ResponseInit = {}) =>
-  new Response(body, {
-    ...init,
-    headers: mergeHeaders({ 'content-type': 'text/plain; charset=utf-8', ...CORS_HEADERS }, init.headers)
-  });
-
-type AccessJwk = JsonWebKey & { kid?: string };
-
-type AccessCertsCacheEntry = {
-  expiry: number;
-  keys: AccessJwk[];
-};
-
-const accessCertsCache = new Map<string, AccessCertsCacheEntry>();
-const ACCESS_CERTS_TTL_MS = 5 * 60 * 1000;
-
-const base64UrlToUint8Array = (input: string) => {
-  let base64 = input.replace(/-/g, '+').replace(/_/g, '/');
-  const pad = base64.length % 4;
-  if (pad) {
-    base64 += '='.repeat(4 - pad);
-  }
-  const binary = atob(base64);
-  const length = binary.length;
-  const bytes = new Uint8Array(length);
-  for (let i = 0; i < length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-};
-
-const decodeTokenSegment = <T>(segment: string): T | null => {
-  try {
-    const decoded = base64UrlToUint8Array(segment);
-    return JSON.parse(new TextDecoder().decode(decoded)) as T;
-  } catch {
-    return null;
-  }
-};
-
-const getAccessKeys = async (env: Env) => {
-  const domain = env.CF_ACCESS_TEAM_DOMAIN;
-  if (!domain) {
-    return [];
-  }
-
-  const cached = accessCertsCache.get(domain);
-  const now = Date.now();
-  if (cached && cached.expiry > now) {
-    return cached.keys;
-  }
-
-  try {
-    const res = await fetch(`https://${domain}/cdn-cgi/access/certs`, {
-      headers: { 'cache-control': 'no-store' }
-    });
-    if (!res.ok) {
-      return [];
-    }
-    const { keys } = (await res.json()) as { keys?: AccessJwk[] };
-    const entry = {
-      keys: keys ?? [],
-      expiry: now + ACCESS_CERTS_TTL_MS
-    };
-    accessCertsCache.set(domain, entry);
-    return entry.keys;
-  } catch {
-    return [];
-  }
-};
-
-const requireAccess = async (req: Request, env: Env) => {
-  const token = req.headers.get('cf-access-jwt-assertion');
-  if (!token || !env.CF_ACCESS_AUD) {
-    return false;
-  }
-
-  const parts = token.split('.');
-  if (parts.length !== 3) {
-    return false;
-  }
-
-  const header = decodeTokenSegment<{ kid?: string }>(parts[0]);
-  const payload = decodeTokenSegment<{ aud?: string | string[]; exp?: number; nbf?: number }>(parts[1]);
-  if (!header || !payload || !header.kid) {
-    return false;
-  }
-
-  const keys = await getAccessKeys(env);
-  const jwk = keys.find((key) => key.kid === header.kid);
-  if (!jwk) {
-    return false;
-  }
-
-  let cryptoKey: CryptoKey;
-  try {
-    cryptoKey = await crypto.subtle.importKey(
-      'jwk',
-      jwk,
+  if (!alpacaResponse.ok) {
+    return c.json(
       {
-        name: 'RSASSA-PKCS1-v1_5',
-        hash: 'SHA-256'
+        error: 'Alpaca rejected the order',
+        status: alpacaResponse.status,
+        details: await alpacaResponse.text()
       },
-      false,
-      ['verify']
+      502
     );
-  } catch {
-    return false;
   }
 
   const message = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
@@ -356,5 +283,7 @@ const handler = {
     return ok('not found', { status: 404 });
   }
 };
+  return c.json(await alpacaResponse.json());
+});
 
-export default handler;
+export default app;
