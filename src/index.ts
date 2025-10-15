@@ -8,67 +8,20 @@ export interface Env {
 const ALLOWED_METHODS = "GET,POST,DELETE,OPTIONS";
 const ALLOWED_HEADERS = "Authorization,Content-Type";
 
-const escapeRegex = (input: string) =>
-  input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRegex = (value: string) => value.replace(/[-/\\^$+?.()|[\]{}]/g, "\\$&");
 
-type AllowedOrigins = {
-  allowAny: boolean;
-  literals: Set<string>;
-  patterns: Array<{ source: string; regex: RegExp }>;
-};
-
-const allowedOriginsCache = new Map<string, AllowedOrigins>();
-
-const buildAllowedOrigins = (raw: string): AllowedOrigins => {
-  if (allowedOriginsCache.has(raw)) {
-    return allowedOriginsCache.get(raw)!;
+const originMatches = (origin: string, pattern: string) => {
+  if (!pattern) return false;
+  if (pattern === "*") {
+    return origin.length > 0;
   }
 
-  const parsed: AllowedOrigins = {
-    allowAny: false,
-    literals: new Set<string>(),
-    patterns: []
-  };
-
-  for (const entry of raw.split(",")) {
-    const allowed = entry.trim();
-    if (!allowed) continue;
-
-    if (allowed === "*") {
-      parsed.allowAny = true;
-      continue;
-    }
-
-    if (!allowed.includes("*")) {
-      parsed.literals.add(allowed);
-      continue;
-    }
-
-    const pattern = `^${allowed
-      .split("*")
-      .map(escapeRegex)
-      .join(".*")}$`;
-
-    try {
-      parsed.patterns.push({ source: allowed, regex: new RegExp(pattern) });
-    } catch (error) {
-      console.warn("Invalid CORS origin pattern", allowed, error);
-    }
+  if (!pattern.includes("*")) {
+    return origin === pattern;
   }
 
-  allowedOriginsCache.set(raw, parsed);
-  return parsed;
-};
-
-const originMatches = (allowed: AllowedOrigins, origin: string) => {
-  if (allowed.allowAny) return "*";
-  if (allowed.literals.has(origin)) return origin;
-
-  for (const { regex } of allowed.patterns) {
-    if (regex.test(origin)) return origin;
-  }
-
-  return null;
+  const regex = new RegExp(`^${escapeRegex(pattern).replace(/\\\*/g, ".*")}$`);
+  return regex.test(origin);
 };
 
 const corsHeaders = (env: Env, req: Request) => {
@@ -80,11 +33,8 @@ const corsHeaders = (env: Env, req: Request) => {
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin"
   };
-  if (origin) {
-    const matched = originMatches(allowed, origin);
-    if (matched) headers["Access-Control-Allow-Origin"] = matched;
-  } else if (allowed.allowAny) {
-    headers["Access-Control-Allow-Origin"] = "*";
+  if (origin && allow.some((pattern) => originMatches(origin, pattern))) {
+    headers["Access-Control-Allow-Origin"] = origin;
   }
   return headers;
 };
