@@ -74,24 +74,31 @@ type AccessCertsCacheEntry = {
 const accessCertsCache = new Map<string, AccessCertsCacheEntry>();
 const ACCESS_CERTS_TTL_MS = 5 * 60 * 1000;
 
-const base64UrlToUint8Array = (input: string) => {
-  let base64 = input.replace(/-/g, '+').replace(/_/g, '/');
-  const pad = base64.length % 4;
-  if (pad) {
-    base64 += '='.repeat(4 - pad);
+const base64UrlToUint8Array = (input: string): Uint8Array | null => {
+  try {
+    let base64 = input.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = base64.length % 4;
+    if (pad) {
+      base64 += '='.repeat(4 - pad);
+    }
+    const binary = atob(base64);
+    const length = binary.length;
+    const bytes = new Uint8Array(length);
+    for (let i = 0; i < length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  } catch {
+    return null;
   }
-  const binary = atob(base64);
-  const length = binary.length;
-  const bytes = new Uint8Array(length);
-  for (let i = 0; i < length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
 };
 
 const decodeTokenSegment = <T>(segment: string): T | null => {
   try {
     const decoded = base64UrlToUint8Array(segment);
+    if (!decoded) {
+      return null;
+    }
     return JSON.parse(new TextDecoder().decode(decoded)) as T;
   } catch {
     return null;
@@ -169,21 +176,15 @@ const requireAccess = async (req: Request, env: Env) => {
   }
 
   const message = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
-
-  let signature: ArrayBuffer;
-  try {
-    const signatureBytes = base64UrlToUint8Array(parts[2]);
-    signature = signatureBytes.buffer.slice(
-      signatureBytes.byteOffset,
-      signatureBytes.byteOffset + signatureBytes.byteLength
-    );
-  } catch {
+  const signature = base64UrlToUint8Array(parts[2]);
+  if (!signature) {
     return false;
   }
 
   let verified: boolean;
   try {
-    verified = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, signature, message);
+    const signatureBuffer = signature.buffer as ArrayBuffer;
+    verified = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, signatureBuffer, message);
   } catch {
     return false;
   }
