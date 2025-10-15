@@ -12,7 +12,7 @@
     { "type": "ai", "name": "AI" }
   ],
   "vars": {
-    "CORS_ALLOWED_ORIGINS": "https://goldshore.org,https://trade.goldshore.org",
+    "CORS_ALLOWED_ORIGINS": "https://goldshore.org, https://trade.goldshore.org",
     "API_VERSION": "v1"
   },
   "env": {
