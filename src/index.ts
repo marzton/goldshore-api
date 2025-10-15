@@ -24,6 +24,12 @@ const originMatches = (origin: string, pattern: string) => {
   return regex.test(origin);
 };
 
+const buildAllowedOrigins = (allow: string) =>
+  allow
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
 const resolveAllowedOrigin = (origin: string, allow: string[]) => {
   for (const pattern of allow) {
     if (!pattern) continue;
@@ -48,7 +54,7 @@ const corsHeaders = (env: Env, req: Request) => {
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin"
   };
-  const allowedOrigin = resolveAllowedOrigin(origin, allow);
+  const allowedOrigin = resolveAllowedOrigin(origin, allowed);
   if (allowedOrigin) {
     headers["Access-Control-Allow-Origin"] = allowedOrigin;
     if (allowedOrigin === "*") {
