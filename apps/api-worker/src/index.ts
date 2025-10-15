@@ -47,6 +47,12 @@ type TradeRequest = {
   qty: number;
 };
 
+type TradeRequest = {
+  symbol: string;
+  side: 'buy' | 'sell';
+  qty: number;
+};
+
 const app = new Hono<{ Bindings: Bindings }>();
 
 function pickAlpaca(env: WorkerEnv) {
@@ -256,15 +262,15 @@ const requireAccess = async (req: Request, env: Env) => {
   const alpacaResponse = await fetch('https://paper-api.alpaca.markets/v2/orders', {
     method: 'POST',
     headers: {
-      'APCA-API-KEY-ID': c.env.ALPACA_KEY,
-      'APCA-API-SECRET-KEY': c.env.ALPACA_SECRET,
+      'APCA-API-KEY-ID': key,
+      'APCA-API-SECRET-KEY': secret,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      symbol,
-      side,
+      symbol: payload.symbol,
+      side: payload.side,
       type: 'market',
-      qty,
+      qty: payload.qty,
       time_in_force: 'day'
     })
   });
