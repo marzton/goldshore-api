@@ -8,6 +8,22 @@ export interface Env {
 const ALLOWED_METHODS = "GET,POST,DELETE,OPTIONS";
 const ALLOWED_HEADERS = "Authorization,Content-Type";
 
+const escapeRegex = (value: string) => value.replace(/[-/\\^$+?.()|[\]{}]/g, "\\$&");
+
+const originMatches = (origin: string, pattern: string) => {
+  if (!pattern) return false;
+  if (pattern === "*") {
+    return origin.length > 0;
+  }
+
+  if (!pattern.includes("*")) {
+    return origin === pattern;
+  }
+
+  const regex = new RegExp(`^${escapeRegex(pattern).replace(/\\\*/g, ".*")}$`);
+  return regex.test(origin);
+};
+
 const corsHeaders = (env: Env, req: Request) => {
   const origin = req.headers.get("Origin") || "";
   const allow = (env.CORS_ALLOWED_ORIGINS || "")
@@ -20,7 +36,9 @@ const corsHeaders = (env: Env, req: Request) => {
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin"
   };
-  if (allow.includes(origin)) headers["Access-Control-Allow-Origin"] = origin;
+  if (origin && allow.some((pattern) => originMatches(origin, pattern))) {
+    headers["Access-Control-Allow-Origin"] = origin;
+  }
   return headers;
 };
 
