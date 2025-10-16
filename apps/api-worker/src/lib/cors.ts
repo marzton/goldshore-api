@@ -5,25 +5,32 @@ const ALLOWED_HEADERS = "Authorization,Content-Type,CF-Access-Jwt-Assertion";
 
 const escapeRegex = (value: string) => value.replace(/[-/\\^$+?.()|[\]{}]/g, "\\$&");
 
-const originMatches = (origin: string, pattern: string) => {
-  if (!pattern) return false;
-  if (pattern === "*") return origin.length > 0;
-  if (!pattern.includes("*")) return origin === pattern;
-  const regex = new RegExp(`^${escapeRegex(pattern).replace(/\\\*/g, ".*")}$`);
-  return regex.test(origin);
+type OriginRule =
+  | { type: "wildcard" }
+  | { type: "exact"; value: string }
+  | { type: "pattern"; regex: RegExp };
+
+const createOriginRule = (pattern: string): OriginRule | null => {
+  const value = pattern.trim();
+  if (!value) return null;
+  if (value === "*") return { type: "wildcard" };
+  if (!value.includes("*")) return { type: "exact", value };
+  const regex = new RegExp(`^${escapeRegex(value).replace(/\\\*/g, ".*")}$`);
+  return { type: "pattern", regex };
 };
 
-const buildAllowedOrigins = (allow: string) =>
+const buildAllowedOrigins = (allow: string): OriginRule[] =>
   allow
     .split(",")
-    .map(value => value.trim())
-    .filter(Boolean);
+    .map(createOriginRule)
+    .filter((rule): rule is OriginRule => Boolean(rule));
 
-const resolveAllowedOrigin = (origin: string, allow: string[]) => {
-  for (const pattern of allow) {
-    if (!pattern) continue;
-    if (pattern === "*") return "*";
-    if (origin && originMatches(origin, pattern)) return origin;
+const resolveAllowedOrigin = (origin: string, allow: OriginRule[]) => {
+  for (const rule of allow) {
+    if (rule.type === "wildcard") return "*";
+    if (!origin) continue;
+    if (rule.type === "exact" && origin === rule.value) return origin;
+    if (rule.type === "pattern" && rule.regex.test(origin)) return origin;
   }
   return null;
 };
