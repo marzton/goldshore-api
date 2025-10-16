@@ -3,6 +3,7 @@
 Monorepo for:
 - **Admin UI** (Cloudflare Pages)
 - **API Worker** (Cloudflare Workers, name: `GoldShore`)
+- **Marketing Web** (Astro static site in `apps/web`)
 - Shared packages (`packages/ui`, `packages/utils`)
 
 ## Quick start
@@ -12,6 +13,11 @@ Monorepo for:
 corepack enable
 pnpm i
 pnpm -w ./apps/admin dev
+
+# marketing site lives in apps/web
+cd apps/web
+npm install
+npm run dev
 ```
 
 ## Deploy
@@ -40,7 +46,7 @@ Override `EXPECTED_*` environment variables if the Cloudflare targets ever chang
 
 # goldshore-api
 
-GoldShore API
+GoldShore API. See [README-API.md](README-API.md) for the modular Cloudflare Worker surface, bindings, and endpoint map.
 
 ## Phase 1 Deployment: DNS reset and verification
 
