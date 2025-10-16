@@ -22,9 +22,17 @@ export async function getOHLC(env: Env, url: URL, cors: HeadersInit) {
   const symbol = url.searchParams.get("symbol") || "SPY";
   const tf = url.searchParams.get("tf") || "day";
   const limit = url.searchParams.get("limit") || "100";
-  const from = url.searchParams.get("from") || "2024-01-01";
+  const fromParam = url.searchParams.get("from");
   const toParam = url.searchParams.get("to");
-  const to = toParam || formatDate(new Date());
+
+  const toDate = parseDateOrDefault(toParam, new Date());
+  const fromDate = parseDateOrDefault(
+    fromParam,
+    new Date(toDate.getTime() - 365 * 24 * 60 * 60 * 1000),
+  );
+
+  const from = formatDate(fromDate);
+  const to = formatDate(toDate);
   const ttl = 60;
   const key = `ohlc:${symbol}:${tf}:${limit}:${from}:${to}`;
   const data = await cacheGetSet(env, key, ttl, async () => {
@@ -40,4 +48,15 @@ export async function getOHLC(env: Env, url: URL, cors: HeadersInit) {
 
 function formatDate(date: Date) {
   return date.toISOString().split("T")[0];
+}
+
+function parseDateOrDefault(value: string | null, fallback: Date) {
+  if (!value) return fallback;
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return fallback;
+  }
+
+  return parsed;
 }
