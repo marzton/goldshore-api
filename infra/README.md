@@ -6,5 +6,4 @@
 - Policy: Email OTP or Google SSO (your addresses)
 
 ## DNS
-- `goldshore.org` → Pages project (admin)
 - `api.goldshore.org/*` → Worker route → Service: `GoldShore`
