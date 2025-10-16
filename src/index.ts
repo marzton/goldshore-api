@@ -1,146 +1,100 @@
-export interface Env {
-  KV_BINDING: KVNamespace;
-  AI: any;
-  CORS_ALLOWED_ORIGINS?: string;
-  API_VERSION?: string;
+import { ok, unauthorized, serverError } from "./lib/util";
+import { requireAccess } from "./lib/access";
+import type { Env } from "./types";
+
+import { getQuote, getOHLC } from "./handlers/market";
+import { getOrders, createOrder } from "./handlers/broker";
+import { headlines } from "./handlers/news";
+import { listFilings } from "./handlers/edgar";
+import { ytSearch } from "./handlers/youtube";
+import { generateReport, getReport } from "./handlers/reports";
+import { postBacktest, getBacktest } from "./handlers/backtests";
+
+const ALLOWED = ["https://goldshore.org", "https://www.goldshore.org"];
+const PAGES_PREVIEW = /\.pages\.dev$/;
+const LOCAL = /^https?:\/\/localhost(:\d+)?$/;
+
+function getOrigin(req: Request) {
+  const origin = req.headers.get("origin") || "";
+  if (ALLOWED.includes(origin) || PAGES_PREVIEW.test(origin) || LOCAL.test(origin)) return origin;
+  return "";
 }
 
-const ALLOWED_METHODS = "GET,POST,DELETE,OPTIONS";
-const ALLOWED_HEADERS = "Authorization,Content-Type";
-
-const escapeRegex = (value: string) => value.replace(/[-/\\^$+?.()|[\]{}]/g, "\\$&");
-
-const originMatches = (origin: string, pattern: string) => {
-  if (!pattern) return false;
-  if (pattern === "*") {
-    return origin.length > 0;
-  }
-
-  if (!pattern.includes("*")) {
-    return origin === pattern;
-  }
-
-  const regex = new RegExp(`^${escapeRegex(pattern).replace(/\\\*/g, ".*")}$`);
-  return regex.test(origin);
-};
-
-const buildAllowedOrigins = (allow: string) =>
-  allow
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-const resolveAllowedOrigin = (origin: string, allow: string[]) => {
-  for (const pattern of allow) {
-    if (!pattern) continue;
-    if (pattern === "*") {
-      return "*";
-    }
-
-    if (origin && originMatches(origin, pattern)) {
-      return origin;
-    }
-  }
-
-  return null;
-};
-
-const corsHeaders = (env: Env, req: Request) => {
-  const origin = req.headers.get("Origin") || "";
-  const allowed = buildAllowedOrigins(env.CORS_ALLOWED_ORIGINS || "");
+function corsHeaders(req: Request) {
+  const origin = getOrigin(req);
   const headers: Record<string, string> = {
-    "Access-Control-Allow-Methods": ALLOWED_METHODS,
-    "Access-Control-Allow-Headers": ALLOWED_HEADERS,
-    "Access-Control-Max-Age": "86400",
-    "Vary": "Origin"
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-headers": "authorization,content-type,cf-access-jwt-assertion",
+    "access-control-max-age": "86400"
   };
-  const allowedOrigin = resolveAllowedOrigin(origin, allowed);
-  if (allowedOrigin) {
-    headers["Access-Control-Allow-Origin"] = allowedOrigin;
-    if (allowedOrigin === "*") {
-      delete headers["Vary"];
-    }
-  }
+  if (origin) headers["access-control-allow-origin"] = origin;
   return headers;
-};
+}
 
-const json = (
-  data: unknown,
-  status = 200,
-  headers: Record<string, string> = {}
-) =>
-  new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json; charset=utf-8", ...headers }
-  });
+function withCORS(req: Request, res: Response) {
+  const headers = new Headers(res.headers);
+  for (const [key, value] of Object.entries(corsHeaders(req))) headers.set(key, value);
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
 
-const unauthorized = (headers: Record<string, string>) =>
-  json({ error: "Unauthorized" }, 401, {
-    ...headers,
-    "Cache-Control": "no-store"
-  });
-
-const requireAccess = (req: Request) => {
-  const jwt = req.headers.get("CF-Access-Jwt-Assertion");
-  const email = req.headers.get("CF-Access-Authenticated-User-Email");
-  return Boolean((jwt && jwt.trim()) || (email && email.trim()));
-};
+function respond(req: Request, result: Response | Promise<Response>) {
+  return Promise.resolve(result).then((res) => withCORS(req, res));
+}
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
-    const CH = corsHeaders(env, req);
-
     if (req.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: CH });
+      if (req.headers.get("origin") && req.headers.get("access-control-request-method")) {
+        return respond(req, new Response(null, { status: 204 }));
+      }
+      return respond(req, new Response("", { status: 204 }));
     }
 
     if (url.pathname === "/health") {
-      return json(
-        {
-          ok: true,
-          service: "goldshore-api",
-          version: env.API_VERSION || "v1",
-          time: new Date().toISOString()
-        },
-        200,
-        CH
-      );
-    }
-
-    const requiresAccess =
-      url.pathname.startsWith("/v1/") ||
-      url.pathname === "/kv" ||
-      url.pathname === "/ai";
-
-    if (requiresAccess && !requireAccess(req)) {
-      return unauthorized(CH);
-    }
-
-    if (url.pathname === "/kv") {
-      await env.KV_BINDING.put("demo", "Hello from Goldshore!");
-      const val = await env.KV_BINDING.get("demo");
-      return json({ ok: true, value: val }, 200, CH);
-    }
-
-    if (url.pathname === "/ai") {
-      const input = { prompt: "Tell me a short joke about Cloudflare." };
-      const res = await env.AI.run("@cf/meta/llama-3-8b-instruct", input);
-      return json(
-        {
-          ok: true,
-          model: "llama-3-8b-instruct",
-          response: res.response
-        },
-        200,
-        CH
-      );
+      return respond(req, ok({ ok: true, service: "goldshore-api", time: new Date().toISOString() }));
     }
 
     if (url.pathname.startsWith("/v1/")) {
-      // Protected routes should execute below.
+      if (!(await requireAccess(req))) {
+        return respond(req, unauthorized());
+      }
+
+      try {
+        if (url.pathname === "/v1/whoami") {
+          const email = req.headers.get("CF-Access-Authenticated-User-Email") || null;
+          return respond(req, ok({ ok: true, email }));
+        }
+
+        if (url.pathname === "/v1/market/quote") return respond(req, getQuote(env, url));
+        if (url.pathname === "/v1/market/ohlc") return respond(req, getOHLC(env, url));
+
+        if (url.pathname === "/v1/broker/orders" && req.method === "GET") return respond(req, getOrders(env, url));
+        if (url.pathname === "/v1/broker/orders" && req.method === "POST") return respond(req, createOrder(env, req));
+
+        if (url.pathname === "/v1/news/headlines") return respond(req, headlines(env, url));
+        if (url.pathname === "/v1/edgar/filings") return respond(req, listFilings(env, url));
+
+        if (url.pathname === "/v1/youtube/search") return respond(req, ytSearch(env, url));
+
+        if (url.pathname === "/v1/reports/generate" && req.method === "POST") return respond(req, generateReport(env, req));
+        if (url.pathname.startsWith("/v1/reports/") && req.method === "GET") {
+          const id = url.pathname.split("/").pop();
+          if (id) return respond(req, getReport(env, id));
+        }
+
+        if (url.pathname === "/v1/backtests/run" && req.method === "POST") return respond(req, postBacktest(env, req));
+        if (url.pathname.startsWith("/v1/backtests/") && req.method === "GET") {
+          const id = url.pathname.split("/").pop();
+          if (id) return respond(req, getBacktest(env, id));
+        }
+      } catch (error) {
+        return respond(req, serverError(error));
+      }
+
+      return respond(req, new Response("Not Found", { status: 404 }));
     }
 
-    return new Response("Not Found", { status: 404, headers: CH });
+    return respond(req, new Response("Not Found", { status: 404 }));
   }
 };
