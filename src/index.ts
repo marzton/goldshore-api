@@ -1,15 +1,35 @@
 import { corsHeaders } from "./lib/cors";
-import { ok, unauthorized, serverError } from "./lib/util";
-import { requireAccess } from "./lib/access";
+import { ok, serverError } from "./lib/util";
 import type { Env } from "./types";
+import { routeV1 } from "./router";
 
-import { getQuote, getOHLC } from "./handlers/market";
-import { getOrders, createOrder } from "./handlers/broker";
-import { headlines } from "./handlers/news";
-import { listFilings } from "./handlers/edgar";
-import { ytSearch } from "./handlers/youtube";
-import { generateReport, getReport } from "./handlers/reports";
-import { postBacktest, getBacktest } from "./handlers/backtests";
+function requireAccess(req: Request): boolean {
+  const jwt = req.headers.get("CF-Access-Jwt-Assertion");
+  const email = req.headers.get("CF-Access-Authenticated-User-Email");
+
+  return Boolean(jwt || email);
+}
+
+function unauthorized(cors: HeadersInit): Response {
+  const headers = new Headers(cors);
+  headers.set("Cache-Control", "no-store");
+  headers.set("Content-Type", "application/json");
+
+  return new Response(JSON.stringify({ ok: false, error: "Unauthorized" }), {
+    status: 401,
+    headers,
+  });
+}
+
+function notFound(cors: HeadersInit): Response {
+  const headers = new Headers(cors);
+  headers.set("Content-Type", "application/json");
+
+  return new Response(JSON.stringify({ ok: false, error: "Not Found" }), {
+    status: 404,
+    headers,
+  });
+}
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -25,45 +45,22 @@ export default {
     }
 
     if (url.pathname.startsWith("/v1/")) {
-      if (!(await requireAccess(req))) {
+      if (!requireAccess(req)) {
         return unauthorized(cors);
       }
 
       try {
-        if (url.pathname === "/v1/whoami") {
-          const email = req.headers.get("CF-Access-Authenticated-User-Email") || null;
-          return ok({ ok: true, email }, cors);
-        }
-
-        if (url.pathname === "/v1/market/quote") return getQuote(env, url, cors);
-        if (url.pathname === "/v1/market/ohlc") return getOHLC(env, url, cors);
-
-        if (url.pathname === "/v1/broker/orders" && req.method === "GET") return getOrders(env, url, cors);
-        if (url.pathname === "/v1/broker/orders" && req.method === "POST") return createOrder(env, req, cors);
-
-        if (url.pathname === "/v1/news/headlines") return headlines(env, url, cors);
-        if (url.pathname === "/v1/edgar/filings") return listFilings(env, url, cors);
-
-        if (url.pathname === "/v1/youtube/search") return ytSearch(env, url, cors);
-
-        if (url.pathname === "/v1/reports/generate" && req.method === "POST") return generateReport(env, req, cors);
-        if (url.pathname.startsWith("/v1/reports/") && req.method === "GET") {
-          const id = url.pathname.split("/").pop();
-          if (id) return getReport(env, id, cors);
-        }
-
-        if (url.pathname === "/v1/backtests/run" && req.method === "POST") return postBacktest(env, req, cors);
-        if (url.pathname.startsWith("/v1/backtests/") && req.method === "GET") {
-          const id = url.pathname.split("/").pop();
-          if (id) return getBacktest(env, id, cors);
+        const response = await routeV1(req, env, cors);
+        if (response) {
+          return response;
         }
       } catch (error) {
         return serverError(error, cors);
       }
 
-      return new Response("Not Found", { status: 404, headers: cors });
+      return notFound(cors);
     }
 
-    return new Response("Not Found", { status: 404, headers: cors });
+    return notFound(cors);
   }
 };
