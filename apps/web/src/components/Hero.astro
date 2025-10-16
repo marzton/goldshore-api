@@ -1,0 +1,14 @@
+---
+export interface Props {
+  title?: string;
+  subtitle?: string;
+  ctaHref?: string;
+  ctaLabel?: string;
+}
+const { title = 'Gold Shore Labs', subtitle = 'Steer, don’t chase. Operable intelligence for operators & traders.', ctaHref = '/services', ctaLabel = 'Explore services' } = Astro.props;
+---
+<section class="container" style="padding:4rem 1.25rem">
+  <h1 style="font-size:2.25rem;margin:0 0 .5rem 0">{title}</h1>
+  <p class="muted" style="max-width:56ch;margin:.25rem 0 1.25rem 0">{subtitle}</p>
+  <a class="btn" href={ctaHref}>{ctaLabel}</a>
+</section>

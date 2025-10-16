@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Python">
+  <linearGradient id="a" x1="0" x2="0" y1="0" y2="1">
+    <stop offset="0" stop-color="#3776ab"/><stop offset="1" stop-color="#2b5b84"/>
+  </linearGradient>
+  <linearGradient id="b" x1="0" x2="0" y1="0" y2="1">
+    <stop offset="0" stop-color="#ffd43b"/><stop offset="1" stop-color="#e9b92c"/>
+  </linearGradient>
+  <path fill="url(#a)" d="M64 8c27 0 24 20 24 20v14H40V36S37 8 64 8zM48 24a6 6 0 1 0 0 12 6 6 0 0 0 0-12z"/>
+  <path fill="url(#b)" d="M64 120c-27 0-24-20-24-20V86h48v6s3 28-24 28zM80 104a6 6 0 1 0 0-12 6 6 0 0 0 0 12z"/>
+</svg>
