@@ -40,7 +40,7 @@ Override `EXPECTED_*` environment variables if the Cloudflare targets ever chang
 
 # goldshore-api
 
-GoldShore API
+GoldShore API. See [README-API.md](README-API.md) for the modular Cloudflare Worker surface, bindings, and endpoint map.
 
 ## Phase 1 Deployment: DNS reset and verification
 
