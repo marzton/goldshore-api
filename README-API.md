@@ -63,6 +63,7 @@ Each `/v1` handler returns placeholder JSON from `src/handlers/*` until a provid
 - KV namespace `KV_CACHE` for response caching.
 - D1 database `DB` for user/report/backtest metadata.
 - R2 bucket `R2` for report/backtest artifacts (future work: signed URLs).
+- Queue producer `JOBS` for async workers (report + backtest jobs).
 - Queue producer `JOBS` (and matching consumer) for async workers (report + backtest jobs).
 
 ### Provisioning resources
