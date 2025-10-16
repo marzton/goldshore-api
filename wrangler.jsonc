@@ -3,6 +3,14 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-10-15",
 
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true
+    }
+  },
+
   "routes": [
     { "pattern": "api.goldshore.org/*", "zone_name": "goldshore.org" }
   ],
