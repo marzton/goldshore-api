@@ -63,7 +63,27 @@ Each `/v1` handler returns placeholder JSON from `src/handlers/*` until a provid
 - KV namespace `KV_CACHE` for response caching.
 - D1 database `DB` for user/report/backtest metadata.
 - R2 bucket `R2` for report/backtest artifacts (future work: signed URLs).
-- Queue producer `JOBS` for async workers (report + backtest jobs).
+- Queue producer `JOBS` (and matching consumer) for async workers (report + backtest jobs).
+
+### Provisioning resources
+
+Create the Cloudflare resources once per environment (names/IDs can be swapped to match your account):
+
+```bash
+# KV
+wrangler kv namespace create KV_CACHE
+
+# D1 (then load schema with the command below)
+wrangler d1 create goldshore_db
+
+# Queues (binds as "jobs" in wrangler.jsonc)
+wrangler queues create jobs
+
+# R2
+wrangler r2 bucket create goldshore-reports
+```
+
+Update the generated IDs in `wrangler.jsonc` after creation.
 
 ## Required secrets
 
@@ -72,11 +92,15 @@ Set via `wrangler secret put ...` or Dashboard:
 - `ALPACA_KEY`, `ALPACA_SECRET`
 - `POLYGON_KEY`
 - `YOUTUBE_API_KEY`
+- `OPENAI_API_KEY`
 - `GOOGLE_API_KEY`, `GOOGLE_CSE_ID`
 - Any ad platform tokens when those handlers are implemented.
 
 Optional:
 - `ALPACA_BASE_URL` to override the API host (live trading vs paper).
+- `TRADE_WEBHOOK_TOKEN` if the trade UI pushes jobs directly.
+
+The worker exposes feature toggles (`FEATURE_NEWS`, `FEATURE_REPORTS`, `FEATURE_BACKTESTS`) and TTL knobs (`NEWS_MAX_AGE`, `QUOTES_MAX_AGE`) in `wrangler.jsonc`. Override them per-environment via the `env` blocks (`preview`, `staging`, `production`) and remember to keep `/v1/*` routes behind Cloudflare Access in production deployments.
 
 ## D1 schema
 

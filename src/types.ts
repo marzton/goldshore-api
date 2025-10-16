@@ -16,6 +16,13 @@ export interface QueueBinding {
 
 export interface RuntimeBindings extends CacheBinding, DatabaseBinding, ObjectStoreBinding, QueueBinding {}
 
+  ENV?: string;
+  CORS_ALLOWED_ORIGINS?: string;
+  QUOTES_MAX_AGE?: string;
+  NEWS_MAX_AGE?: string;
+  FEATURE_NEWS?: string;
+  FEATURE_REPORTS?: string;
+  FEATURE_BACKTESTS?: string;
 export interface CorsConfig {
   CORS_ALLOWED_ORIGINS?: string;
   QUOTES_MAX_AGE?: string;
