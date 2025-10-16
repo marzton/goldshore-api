@@ -38,6 +38,26 @@ Cloudflare Workers API that orchestrates trading, market data, news/filings, res
 - R2 bucket `R2` for report/backtest artifacts (future work: signed URLs).
 - Queue producer `JOBS` (and matching consumer) for async workers (report + backtest jobs).
 
+### Provisioning resources
+
+Create the Cloudflare resources once per environment (names/IDs can be swapped to match your account):
+
+```bash
+# KV
+wrangler kv namespace create KV_CACHE
+
+# D1 (then load schema with the command below)
+wrangler d1 create goldshore_db
+
+# Queues (binds as "jobs" in wrangler.jsonc)
+wrangler queues create jobs
+
+# R2
+wrangler r2 bucket create goldshore-reports
+```
+
+Update the generated IDs in `wrangler.jsonc` after creation.
+
 ## Required secrets
 
 Set via `wrangler secret put ...` or Dashboard:
