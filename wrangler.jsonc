@@ -25,6 +25,7 @@
   ],
 
   "queues": {
+    "producers": [{ "binding": "JOBS", "queue": "jobs" }]
     // Create the backing queue before deploying: `wrangler queues create jobs`
     "producers": [{ "binding": "JOBS", "queue": "jobs" }]
   },
