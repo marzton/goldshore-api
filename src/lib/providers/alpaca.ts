@@ -1,3 +1,6 @@
+import type { Env } from "../../types";
+
+export async function alpaca(env: Env, path: string, init: RequestInit = {}) {
 import type { AlpacaConfig } from "../../types";
 
 export async function alpaca(env: AlpacaConfig, path: string, init: RequestInit = {}) {

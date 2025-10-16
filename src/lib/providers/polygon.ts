@@ -1,3 +1,6 @@
+import type { Env } from "../../types";
+
+export async function polygon(env: Env, path: string, qs: Record<string, string> = {}) {
 import type { PolygonConfig } from "../../types";
 
 export async function polygon(env: PolygonConfig, path: string, qs: Record<string, string> = {}) {

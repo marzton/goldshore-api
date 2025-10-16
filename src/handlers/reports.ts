@@ -1,6 +1,7 @@
 import { ok, bad } from "../lib/util";
 import type { Env } from "../types";
 
+export async function generateReport(env: Env, req: Request) {
 export async function generateReport(env: Env, req: Request, cors: HeadersInit) {
   const body = (await req.json().catch(() => null)) as unknown;
   const payload = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
@@ -19,6 +20,13 @@ export async function generateReport(env: Env, req: Request, cors: HeadersInit) 
     .bind(record.id, record.owner, record.kind, record.params, record.r2_key, record.status)
     .run();
   await env.JOBS.send({ kind: "report", id });
+  return ok({ ok: true, id, status: "queued" });
+}
+
+export async function getReport(env: Env, id: string) {
+  const row = await env.DB.prepare("SELECT * FROM reports WHERE id=?1").bind(id).first();
+  if (!row) return bad("NOT_FOUND", 404);
+  return ok({ ok: true, report: row });
   return ok({ ok: true, id, status: "queued" }, cors);
 }
 
