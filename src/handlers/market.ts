@@ -25,14 +25,14 @@ export async function getOHLC(env: Env, url: URL, cors: HeadersInit) {
   const fromParam = url.searchParams.get("from");
   const toParam = url.searchParams.get("to");
 
-  const { value: to, date: toDate } = resolveDateRangeBoundary(
-    toParam,
-    new Date(),
-  );
-  const { value: from } = resolveDateRangeBoundary(
+  const toDate = parseDateOrDefault(toParam, new Date());
+  const fromDate = parseDateOrDefault(
     fromParam,
     new Date(toDate.getTime() - 365 * 24 * 60 * 60 * 1000),
   );
+
+  const from = formatDate(fromDate);
+  const to = formatDate(toDate);
   const ttl = 60;
   const key = `ohlc:${symbol}:${tf}:${limit}:${from}:${to}`;
   const data = await cacheGetSet(env, key, ttl, async () => {
@@ -50,13 +50,13 @@ function formatDate(date: Date) {
   return date.toISOString().split("T")[0];
 }
 
-function resolveDateRangeBoundary(value: string | null, fallback: Date) {
-  if (value) {
-    const parsed = new Date(value);
-    if (!Number.isNaN(parsed.getTime())) {
-      return { value, date: parsed };
-    }
+function parseDateOrDefault(value: string | null, fallback: Date) {
+  if (!value) return fallback;
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return fallback;
   }
 
-  return { value: formatDate(fallback), date: fallback };
+  return parsed;
 }
