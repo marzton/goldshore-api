@@ -1,6 +1,9 @@
 import type { Env } from "../../types";
 
 export async function alpaca(env: Env, path: string, init: RequestInit = {}) {
+import type { AlpacaConfig } from "../../types";
+
+export async function alpaca(env: AlpacaConfig, path: string, init: RequestInit = {}) {
   if (!env.ALPACA_KEY || !env.ALPACA_SECRET) throw new Error("ALPACA credentials missing");
   const base = env.ALPACA_BASE_URL || "https://paper-api.alpaca.markets/v2";
   const url = `${base}${path}`;

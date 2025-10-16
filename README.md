@@ -1,10 +1,21 @@
 # GoldShore API Repository
 
-This repository houses the GoldShore API Cloudflare Worker and supporting packages. The worker is the only active deployment target; any legacy Pages or admin references from earlier iterations have been retired.
+Monorepo for:
+- **Admin UI** (Cloudflare Pages)
+- **API Worker** (Cloudflare Workers, name: `GoldShore`)
+- **Marketing Web** (Astro static site in `apps/web`)
+- Shared packages (`packages/ui`, `packages/utils`)
 
 ## Quick start
 
 ```bash
+# choose one package manager; pnpm recommended
+corepack enable
+pnpm i
+pnpm -w ./apps/admin dev
+
+# marketing site lives in apps/web
+cd apps/web
 npm install
 npm run dev
 ```
