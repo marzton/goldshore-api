@@ -5,10 +5,14 @@
   "scripts": {
     "dev": "wrangler dev",
     "build": "tsc -p tsconfig.json",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "fmt": "prettier -w .",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20251011.0",
-    "typescript": "^5.5.4"
+    "prettier": "^3.3.3",
+    "typescript": "^5.5.4",
+    "wrangler": "^4.42.2"
   }
 }

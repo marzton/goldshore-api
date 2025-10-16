@@ -1,146 +1,69 @@
-export interface Env {
-  KV_BINDING: KVNamespace;
-  AI: any;
-  CORS_ALLOWED_ORIGINS?: string;
-  API_VERSION?: string;
-}
+import { corsHeaders } from "./lib/cors";
+import { ok, unauthorized, serverError } from "./lib/util";
+import { requireAccess } from "./lib/access";
+import type { Env } from "./types";
 
-const ALLOWED_METHODS = "GET,POST,DELETE,OPTIONS";
-const ALLOWED_HEADERS = "Authorization,Content-Type";
-
-const escapeRegex = (value: string) => value.replace(/[-/\\^$+?.()|[\]{}]/g, "\\$&");
-
-const originMatches = (origin: string, pattern: string) => {
-  if (!pattern) return false;
-  if (pattern === "*") {
-    return origin.length > 0;
-  }
-
-  if (!pattern.includes("*")) {
-    return origin === pattern;
-  }
-
-  const regex = new RegExp(`^${escapeRegex(pattern).replace(/\\\*/g, ".*")}$`);
-  return regex.test(origin);
-};
-
-const buildAllowedOrigins = (allow: string) =>
-  allow
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-const resolveAllowedOrigin = (origin: string, allow: string[]) => {
-  for (const pattern of allow) {
-    if (!pattern) continue;
-    if (pattern === "*") {
-      return "*";
-    }
-
-    if (origin && originMatches(origin, pattern)) {
-      return origin;
-    }
-  }
-
-  return null;
-};
-
-const corsHeaders = (env: Env, req: Request) => {
-  const origin = req.headers.get("Origin") || "";
-  const allowed = buildAllowedOrigins(env.CORS_ALLOWED_ORIGINS || "");
-  const headers: Record<string, string> = {
-    "Access-Control-Allow-Methods": ALLOWED_METHODS,
-    "Access-Control-Allow-Headers": ALLOWED_HEADERS,
-    "Access-Control-Max-Age": "86400",
-    "Vary": "Origin"
-  };
-  const allowedOrigin = resolveAllowedOrigin(origin, allowed);
-  if (allowedOrigin) {
-    headers["Access-Control-Allow-Origin"] = allowedOrigin;
-    if (allowedOrigin === "*") {
-      delete headers["Vary"];
-    }
-  }
-  return headers;
-};
-
-const json = (
-  data: unknown,
-  status = 200,
-  headers: Record<string, string> = {}
-) =>
-  new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json; charset=utf-8", ...headers }
-  });
-
-const unauthorized = (headers: Record<string, string>) =>
-  json({ error: "Unauthorized" }, 401, {
-    ...headers,
-    "Cache-Control": "no-store"
-  });
-
-const requireAccess = (req: Request) => {
-  const jwt = req.headers.get("CF-Access-Jwt-Assertion");
-  const email = req.headers.get("CF-Access-Authenticated-User-Email");
-  return Boolean((jwt && jwt.trim()) || (email && email.trim()));
-};
+import { getQuote, getOHLC } from "./handlers/market";
+import { getOrders, createOrder } from "./handlers/broker";
+import { headlines } from "./handlers/news";
+import { listFilings } from "./handlers/edgar";
+import { ytSearch } from "./handlers/youtube";
+import { generateReport, getReport } from "./handlers/reports";
+import { postBacktest, getBacktest } from "./handlers/backtests";
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
-    const CH = corsHeaders(env, req);
+    const cors = corsHeaders(env, req);
 
     if (req.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: CH });
+      return new Response(null, { status: 204, headers: cors });
     }
 
     if (url.pathname === "/health") {
-      return json(
-        {
-          ok: true,
-          service: "goldshore-api",
-          version: env.API_VERSION || "v1",
-          time: new Date().toISOString()
-        },
-        200,
-        CH
-      );
-    }
-
-    const requiresAccess =
-      url.pathname.startsWith("/v1/") ||
-      url.pathname === "/kv" ||
-      url.pathname === "/ai";
-
-    if (requiresAccess && !requireAccess(req)) {
-      return unauthorized(CH);
-    }
-
-    if (url.pathname === "/kv") {
-      await env.KV_BINDING.put("demo", "Hello from Goldshore!");
-      const val = await env.KV_BINDING.get("demo");
-      return json({ ok: true, value: val }, 200, CH);
-    }
-
-    if (url.pathname === "/ai") {
-      const input = { prompt: "Tell me a short joke about Cloudflare." };
-      const res = await env.AI.run("@cf/meta/llama-3-8b-instruct", input);
-      return json(
-        {
-          ok: true,
-          model: "llama-3-8b-instruct",
-          response: res.response
-        },
-        200,
-        CH
-      );
+      return ok({ ok: true, service: "goldshore-api", time: new Date().toISOString() }, cors);
     }
 
     if (url.pathname.startsWith("/v1/")) {
-      // Protected routes should execute below.
+      if (!(await requireAccess(req))) {
+        return unauthorized(cors);
+      }
+
+      try {
+        if (url.pathname === "/v1/whoami") {
+          const email = req.headers.get("CF-Access-Authenticated-User-Email") || null;
+          return ok({ ok: true, email }, cors);
+        }
+
+        if (url.pathname === "/v1/market/quote") return getQuote(env, url, cors);
+        if (url.pathname === "/v1/market/ohlc") return getOHLC(env, url, cors);
+
+        if (url.pathname === "/v1/broker/orders" && req.method === "GET") return getOrders(env, url, cors);
+        if (url.pathname === "/v1/broker/orders" && req.method === "POST") return createOrder(env, req, cors);
+
+        if (url.pathname === "/v1/news/headlines") return headlines(env, url, cors);
+        if (url.pathname === "/v1/edgar/filings") return listFilings(env, url, cors);
+
+        if (url.pathname === "/v1/youtube/search") return ytSearch(env, url, cors);
+
+        if (url.pathname === "/v1/reports/generate" && req.method === "POST") return generateReport(env, req, cors);
+        if (url.pathname.startsWith("/v1/reports/") && req.method === "GET") {
+          const id = url.pathname.split("/").pop();
+          if (id) return getReport(env, id, cors);
+        }
+
+        if (url.pathname === "/v1/backtests/run" && req.method === "POST") return postBacktest(env, req, cors);
+        if (url.pathname.startsWith("/v1/backtests/") && req.method === "GET") {
+          const id = url.pathname.split("/").pop();
+          if (id) return getBacktest(env, id, cors);
+        }
+      } catch (error) {
+        return serverError(error, cors);
+      }
+
+      return new Response("Not Found", { status: 404, headers: cors });
     }
 
-    return new Response("Not Found", { status: 404, headers: CH });
+    return new Response("Not Found", { status: 404, headers: cors });
   }
 };
