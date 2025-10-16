@@ -1,15 +1,6 @@
 import type { Env } from "../types";
 
-export async function cacheGetSet<T = unknown>(
-  env: Env,
-import type { CacheBinding } from "../types";
-
-export async function cacheGetSet<T = unknown>(
-  env: CacheBinding,
-  key: string,
-  ttl: number,
-  fetcher: () => Promise<T>
-): Promise<T> {
+export async function cacheGetSet<T = unknown>(env: Env, key: string, ttl: number, fetcher: () => Promise<T>): Promise<T> {
   const hit = await env.KV_CACHE.get(key);
   if (hit) return JSON.parse(hit) as T;
   const data = await fetcher();

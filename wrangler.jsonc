@@ -1,20 +1,15 @@
 {
   "name": "goldshore-api",
   "main": "src/index.ts",
-  // Ensure production route continues to execute src/index.ts entrypoint.
   "compatibility_date": "2025-10-15",
 
   "routes": [
     { "pattern": "api.goldshore.org/*", "zone_name": "goldshore.org" }
   ],
-  // In production, enable Cloudflare Access on /v1/* paths for Zero Trust enforcement.
 
   "kv_namespaces": [
     { "binding": "KV_CACHE", "id": "REPLACE_WITH_KV_CACHE_ID" }
   ],
-  // Cloudflare AI binding for /ai endpoint (must be declared under "ai")
-  "ai": {
-    "binding": "AI"
 
   "d1_databases": [
     { "binding": "DB", "database_name": "goldshore_db", "database_id": "REPLACE_WITH_D1_ID" }
@@ -25,7 +20,6 @@
   ],
 
   "queues": {
-    "producers": [{ "binding": "JOBS", "queue": "jobs" }]
     // Create the backing queue before deploying: `wrangler queues create jobs`
     "producers": [{ "binding": "JOBS", "queue": "jobs" }]
   },
@@ -35,18 +29,14 @@
     "QUOTES_MAX_AGE": "30",
     "NEWS_MAX_AGE": "300"
     "ENV": "production",
-    "CORS_ALLOWED_ORIGINS": "https://goldshore.org,https://trade.goldshore.org",
+    "CORS_ALLOWED_ORIGINS": "https://goldshore.org,https://web.goldshore.org,https://*.pages.dev,http://localhost:5173",
     "QUOTES_MAX_AGE": "30",
-    "NEWS_MAX_AGE": "300",
-    "FEATURE_NEWS": "true",
-    "FEATURE_REPORTS": "true",
-    "FEATURE_BACKTESTS": "true"
+    "NEWS_MAX_AGE": "300"
   },
 
   "env": {
     "preview": {
       "vars": {
-        "CORS_ALLOWED_ORIGINS": "http://localhost:5173,https://*.pages.dev"
         "ENV": "preview",
         "CORS_ALLOWED_ORIGINS": "http://localhost:5173,https://*.pages.dev",
         "QUOTES_MAX_AGE": "10",
@@ -62,14 +52,6 @@
         "QUOTES_MAX_AGE": "15",
         "NEWS_MAX_AGE": "120"
       }
-    },
-    "production": {
-      "vars": {
-        "ENV": "production"
-      }
     }
-  },
-
-  // Secrets: provision with `wrangler secret put` for ALPACA_KEY, ALPACA_SECRET, POLYGON_KEY,
-  // OPENAI_API_KEY, YOUTUBE_API_KEY, GOOGLE_API_KEY, and GOOGLE_CSE_ID to match Env typing.
+  }
 }
