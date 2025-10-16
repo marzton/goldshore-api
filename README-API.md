@@ -36,7 +36,7 @@ Cloudflare Workers API that orchestrates trading, market data, news/filings, res
 - KV namespace `KV_CACHE` for response caching.
 - D1 database `DB` for user/report/backtest metadata.
 - R2 bucket `R2` for report/backtest artifacts (future work: signed URLs).
-- Queue producer `JOBS` for async workers (report + backtest jobs).
+- Queue producer `JOBS` (and matching consumer) for async workers (report + backtest jobs).
 
 ## Required secrets
 
@@ -45,11 +45,15 @@ Set via `wrangler secret put ...` or Dashboard:
 - `ALPACA_KEY`, `ALPACA_SECRET`
 - `POLYGON_KEY`
 - `YOUTUBE_API_KEY`
+- `OPENAI_API_KEY`
 - `GOOGLE_API_KEY`, `GOOGLE_CSE_ID`
 - Any ad platform tokens when those handlers are implemented.
 
 Optional:
 - `ALPACA_BASE_URL` to override the API host (live trading vs paper).
+- `TRADE_WEBHOOK_TOKEN` if the trade UI pushes jobs directly.
+
+The worker exposes feature toggles (`FEATURE_NEWS`, `FEATURE_REPORTS`, `FEATURE_BACKTESTS`) and TTL knobs (`NEWS_MAX_AGE`, `QUOTES_MAX_AGE`) in `wrangler.jsonc`. Override them per-environment via the `env` blocks (`preview`, `staging`, `production`) and remember to keep `/v1/*` routes behind Cloudflare Access in production deployments.
 
 ## D1 schema
 
