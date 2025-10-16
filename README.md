@@ -3,6 +3,7 @@
 Monorepo for:
 - **Admin UI** (Cloudflare Pages)
 - **API Worker** (Cloudflare Workers, name: `GoldShore`)
+- **Marketing Web** (Astro static site in `apps/web`)
 - Shared packages (`packages/ui`, `packages/utils`)
 
 ## Quick start
@@ -10,8 +11,15 @@ Monorepo for:
 ```bash
 # choose one package manager; pnpm recommended
 corepack enable
-pnpm i
-pnpm -w ./apps/admin dev
+pnpm install
+
+# start the admin UI from the workspace
+pnpm --filter @goldshore/admin dev
+
+# marketing site lives in apps/web
+cd apps/web
+npm install
+npm run dev
 ```
 
 ## Deploy
