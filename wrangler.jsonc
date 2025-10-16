@@ -24,7 +24,7 @@
   },
 
   "vars": {
-    "CORS_ALLOWED_ORIGINS": "https://goldshore.org,https://trade.goldshore.org,https://*.pages.dev,http://localhost:5173",
+    "CORS_ALLOWED_ORIGINS": "https://goldshore.org,https://trade.goldshore.org",
     "QUOTES_MAX_AGE": "30",
     "NEWS_MAX_AGE": "300"
   },
