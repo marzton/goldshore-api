@@ -12,6 +12,9 @@
   "kv_namespaces": [
     { "binding": "KV_CACHE", "id": "REPLACE_WITH_KV_CACHE_ID" }
   ],
+  // Cloudflare AI binding for /ai endpoint (must be declared under "ai")
+  "ai": {
+    "binding": "AI"
 
   "d1_databases": [
     { "binding": "DB", "database_name": "goldshore_db", "database_id": "REPLACE_WITH_D1_ID" }

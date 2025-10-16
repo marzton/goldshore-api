@@ -10,6 +10,24 @@ function requireAccess(req: Request): boolean {
   return Boolean(jwt || email);
 }
 
+const corsHeaders = (env: Env, req: Request) => {
+  const origin = req.headers.get("Origin") || "";
+  const allowed = getAllowedOrigins(env.CORS_ALLOWED_ORIGINS || "");
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Methods": ALLOWED_METHODS,
+    "Access-Control-Allow-Headers": ALLOWED_HEADERS,
+    "Access-Control-Max-Age": "86400",
+    "Vary": "Origin"
+  };
+  const allowedOrigin = resolveAllowedOrigin(origin, allowed);
+  if (allowedOrigin) {
+    headers["Access-Control-Allow-Origin"] = allowedOrigin;
+    if (allowedOrigin === "*") {
+      delete headers["Vary"];
+    }
+  }
+  return headers;
+};
 function unauthorized(cors: HeadersInit): Response {
   const headers = new Headers(cors);
   headers.set("Cache-Control", "no-store");
