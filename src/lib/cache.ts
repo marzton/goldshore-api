@@ -1,7 +1,7 @@
-import type { Env } from "../types";
+import type { CacheBinding } from "../types";
 
 export async function cacheGetSet<T = unknown>(
-  env: Env,
+  env: CacheBinding,
   key: string,
   ttl: number,
   fetcher: () => Promise<T>

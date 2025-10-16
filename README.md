@@ -11,10 +11,8 @@ Monorepo for:
 ```bash
 # choose one package manager; pnpm recommended
 corepack enable
-pnpm install
-
-# start the admin UI from the workspace
-pnpm --filter @goldshore/admin dev
+pnpm i
+pnpm -w ./apps/admin dev
 
 # marketing site lives in apps/web
 cd apps/web

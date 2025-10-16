@@ -1,11 +1,13 @@
 {
   "name": "goldshore-api",
   "main": "src/index.ts",
+  // Ensure production route continues to execute src/index.ts entrypoint.
   "compatibility_date": "2025-10-15",
 
   "routes": [
     { "pattern": "api.goldshore.org/*", "zone_name": "goldshore.org" }
   ],
+  // In production, enable Cloudflare Access on /v1/* paths for Zero Trust enforcement.
 
   "kv_namespaces": [
     { "binding": "KV_CACHE", "id": "REPLACE_WITH_KV_CACHE_ID" }
@@ -20,20 +22,53 @@
   ],
 
   "queues": {
-    "producers": [{ "binding": "JOBS", "queue": "jobs" }]
+    // Create the backing queue before deploying: `wrangler queues create jobs`
+    "producers": [{ "binding": "JOBS", "queue": "jobs" }],
+    "consumers": [
+      {
+        "queue": "jobs",
+        "max_batch_size": 10,
+        "max_retries": 5
+      }
+    ]
   },
 
   "vars": {
-    "CORS_ALLOWED_ORIGINS": "https://goldshore.org,https://trade.goldshore.org,https://*.pages.dev,http://localhost:5173",
+    "ENV": "production",
+    "CORS_ALLOWED_ORIGINS": "https://goldshore.org,https://trade.goldshore.org",
     "QUOTES_MAX_AGE": "30",
-    "NEWS_MAX_AGE": "300"
+    "NEWS_MAX_AGE": "300",
+    "FEATURE_NEWS": "true",
+    "FEATURE_REPORTS": "true",
+    "FEATURE_BACKTESTS": "true"
   },
 
   "env": {
     "preview": {
       "vars": {
-        "CORS_ALLOWED_ORIGINS": "http://localhost:5173,https://*.pages.dev"
+        "ENV": "preview",
+        "CORS_ALLOWED_ORIGINS": "http://localhost:5173,https://*.pages.dev",
+        "QUOTES_MAX_AGE": "10",
+        "NEWS_MAX_AGE": "60",
+        "FEATURE_REPORTS": "false",
+        "FEATURE_BACKTESTS": "false"
+      }
+    },
+    "staging": {
+      "vars": {
+        "ENV": "staging",
+        "CORS_ALLOWED_ORIGINS": "https://staging.goldshore.org",
+        "QUOTES_MAX_AGE": "15",
+        "NEWS_MAX_AGE": "120"
+      }
+    },
+    "production": {
+      "vars": {
+        "ENV": "production"
       }
     }
-  }
+  },
+
+  // Secrets: provision with `wrangler secret put` for ALPACA_KEY, ALPACA_SECRET, POLYGON_KEY,
+  // OPENAI_API_KEY, YOUTUBE_API_KEY, GOOGLE_API_KEY, and GOOGLE_CSE_ID to match Env typing.
 }
