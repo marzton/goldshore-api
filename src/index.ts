@@ -1,6 +1,5 @@
 import { corsHeaders } from "./lib/cors";
-import { ok, unauthorized, serverError } from "./lib/util";
-import { requireAccess } from "./lib/access";
+import { ok, serverError } from "./lib/util";
 import type { Env } from "./types";
 
 import { getQuote, getOHLC } from "./handlers/market";
@@ -10,6 +9,24 @@ import { listFilings } from "./handlers/edgar";
 import { ytSearch } from "./handlers/youtube";
 import { generateReport, getReport } from "./handlers/reports";
 import { postBacktest, getBacktest } from "./handlers/backtests";
+
+function requireAccess(req: Request): boolean {
+  const jwt = req.headers.get("CF-Access-Jwt-Assertion");
+  const email = req.headers.get("CF-Access-Authenticated-User-Email");
+
+  return Boolean(jwt || email);
+}
+
+function unauthorized(cors: HeadersInit): Response {
+  const headers = new Headers(cors);
+  headers.set("Cache-Control", "no-store");
+  headers.set("Content-Type", "application/json");
+
+  return new Response(JSON.stringify({ ok: false, error: "Unauthorized" }), {
+    status: 401,
+    headers,
+  });
+}
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -25,7 +42,7 @@ export default {
     }
 
     if (url.pathname.startsWith("/v1/")) {
-      if (!(await requireAccess(req))) {
+      if (!requireAccess(req)) {
         return unauthorized(cors);
       }
 
