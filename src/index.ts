@@ -8,30 +8,62 @@ export interface Env {
 const ALLOWED_METHODS = "GET,POST,DELETE,OPTIONS";
 const ALLOWED_HEADERS = "Authorization,Content-Type";
 
+type AllowedOriginEntry =
+  | { type: "wildcard" }
+  | { type: "literal"; value: string }
+  | { type: "pattern"; regex: RegExp };
+
 const escapeRegex = (value: string) => value.replace(/[-/\\^$+?.()|[\]{}]/g, "\\$&");
 
-const originMatches = (origin: string, pattern: string) => {
-  if (!pattern) return false;
-  if (pattern === "*") {
-    return origin.length > 0;
+const compileAllowedOrigins = (allow: string): AllowedOriginEntry[] =>
+  allow
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map<AllowedOriginEntry>((pattern) => {
+      if (pattern === "*") {
+        return { type: "wildcard" };
+      }
+
+      if (!pattern.includes("*")) {
+        return { type: "literal", value: pattern };
+      }
+
+      const regex = new RegExp(`^${escapeRegex(pattern).replace(/\\\*/g, ".*")}$`);
+      return { type: "pattern", regex };
+    });
+
+let cachedAllowedOrigins: { raw: string; entries: AllowedOriginEntry[] } | null = null;
+
+const getAllowedOrigins = (raw: string): AllowedOriginEntry[] => {
+  if (!cachedAllowedOrigins || cachedAllowedOrigins.raw !== raw) {
+    cachedAllowedOrigins = {
+      raw,
+      entries: compileAllowedOrigins(raw)
+    };
   }
 
-  if (!pattern.includes("*")) {
-    return origin === pattern;
-  }
-
-  const regex = new RegExp(`^${escapeRegex(pattern).replace(/\\\*/g, ".*")}$`);
-  return regex.test(origin);
+  return cachedAllowedOrigins.entries;
 };
 
-const resolveAllowedOrigin = (origin: string, allow: string[]) => {
-  for (const pattern of allow) {
-    if (!pattern) continue;
-    if (pattern === "*") {
+const resolveAllowedOrigin = (
+  origin: string,
+  allow: AllowedOriginEntry[]
+): string | null => {
+  for (const entry of allow) {
+    if (entry.type === "wildcard") {
       return "*";
     }
 
-    if (origin && originMatches(origin, pattern)) {
+    if (!origin) {
+      continue;
+    }
+
+    if (entry.type === "literal" && origin === entry.value) {
+      return origin;
+    }
+
+    if (entry.type === "pattern" && entry.regex.test(origin)) {
       return origin;
     }
   }
@@ -41,14 +73,14 @@ const resolveAllowedOrigin = (origin: string, allow: string[]) => {
 
 const corsHeaders = (env: Env, req: Request) => {
   const origin = req.headers.get("Origin") || "";
-  const allowed = buildAllowedOrigins(env.CORS_ALLOWED_ORIGINS || "");
+  const allowed = getAllowedOrigins(env.CORS_ALLOWED_ORIGINS || "");
   const headers: Record<string, string> = {
     "Access-Control-Allow-Methods": ALLOWED_METHODS,
     "Access-Control-Allow-Headers": ALLOWED_HEADERS,
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin"
   };
-  const allowedOrigin = resolveAllowedOrigin(origin, allow);
+  const allowedOrigin = resolveAllowedOrigin(origin, allowed);
   if (allowedOrigin) {
     headers["Access-Control-Allow-Origin"] = allowedOrigin;
     if (allowedOrigin === "*") {
