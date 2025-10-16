@@ -23,8 +23,8 @@ export async function getOHLC(env: Env, url: URL, cors: HeadersInit) {
   const tf = url.searchParams.get("tf") || "day";
   const limit = url.searchParams.get("limit") || "100";
   const from = url.searchParams.get("from") || "2024-01-01";
-  const to =
-    url.searchParams.get("to") || new Date().toISOString().split("T")[0];
+  const toParam = url.searchParams.get("to");
+  const to = toParam || formatDate(new Date());
   const ttl = 60;
   const key = `ohlc:${symbol}:${tf}:${limit}:${from}:${to}`;
   const data = await cacheGetSet(env, key, ttl, async () => {
@@ -36,4 +36,8 @@ export async function getOHLC(env: Env, url: URL, cors: HeadersInit) {
     return { provider: "polygon", tf, data: response };
   });
   return ok({ ok: true, symbol, ...data }, cors);
+}
+
+function formatDate(date: Date) {
+  return date.toISOString().split("T")[0];
 }
