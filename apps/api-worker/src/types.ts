@@ -4,6 +4,12 @@ export interface Env {
   R2?: R2Bucket;
   JOBS?: Queue;
 
+  CORS_ALLOWED_ORIGINS?: string;
+  QUOTES_MAX_AGE?: string;
+  NEWS_MAX_AGE?: string;
+
+  ALPACA_KEY?: string;
+  ALPACA_SECRET?: string;
   ENV?: string;
   CORS_ALLOWED_ORIGINS?: string;
   QUOTES_MAX_AGE?: string;

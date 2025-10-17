@@ -1,4 +1,4 @@
-# GoldShore Monorepo
+# GoldShore API Repository
 
 Monorepo for:
 - **Admin UI** (Cloudflare Pages)
@@ -20,49 +20,33 @@ npm install
 npm run dev
 ```
 
+The dev server listens on `http://127.0.0.1:8787`. Provide `CF-Access-*` headers when exercising `/v1/*` routes locally.
+
 ## Deploy
 
-* Admin → Cloudflare Pages via `.github/workflows/deploy-pages.yml`
 * API → Cloudflare Worker via `.github/workflows/deploy-worker.yml`
 
-Secrets (repo → Settings → Secrets and variables → Actions):
+Required repository secrets (Settings → Secrets and variables → Actions):
 
-* CLOUDFLARE_ACCOUNT_ID
-* CLOUDFLARE_API_TOKEN
-* CF_PAGES_PROJECT (e.g. `goldshore-admin`)
-* ALPACA_KEY (paper)
-* ALPACA_SECRET (paper)
-* OPENAI_API_KEY (if used later)
+* `CLOUDFLARE_ACCOUNT_ID`
+* `CLOUDFLARE_API_TOKEN`
+* `ALPACA_KEY` (paper)
+* `ALPACA_SECRET` (paper)
+* `OPENAI_API_KEY` (if used later)
 
-## Phase 1 DNS handoff
-
-Deployment work starts with normalising DNS. Track progress in [`docs/dns/PHASE1_DNS_CHECKLIST.md`](docs/dns/PHASE1_DNS_CHECKLIST.md) and use `scripts/check-dns.sh` to confirm propagation:
-
-```bash
-scripts/check-dns.sh
-```
-
-Override `EXPECTED_*` environment variables if the Cloudflare targets ever change.
-
-# goldshore-api
-
-GoldShore API. See [README-API.md](README-API.md) for the modular Cloudflare Worker surface, bindings, and endpoint map.
-
-## Phase 1 Deployment: DNS reset and verification
-
-This repository coordinates the infrastructure work required to bring the GoldShore API online. The following brief captures the current environment status and the exact steps the deployment agent should execute first.
-
-### Current state snapshot
+## Environment snapshot
 
 | Component | Status | Notes |
 | --- | --- | --- |
-| GitHub org `goldshore` | ✅ created, repos `goldshore-web` and `goldshore-api` | |
+| GitHub org `goldshore` | ✅ created, repos `goldshore-web` and `goldshore-api` | `goldshore-web` is archived; deployments run only from this repo. |
 | GoldShore Deployer (App ID 2099597) | ✅ owned by org, permissions correct, webhook points to `api.goldshore.org/webhook/github` | |
-| Secrets | ✅ in both repos (no `GITHUB_` prefixes) | |
-| OpenAI + Cloudflare tokens | ✅ stored | |
-| DNS | ❌ old records still pointing at wrong places | |
-| Worker | ⏳ not deployed yet | |
-| Pages site | ⏳ waiting for DNS + first build | |
+| Secrets | ✅ stored without `GITHUB_` prefixes | |
+| DNS | ❌ old records still pointing at wrong places | Reset to worker-only targets per checklist below. |
+| Worker | ⏳ not deployed yet | Use the deploy workflow once DNS is correct. |
+
+## Phase 1 deployment: DNS reset and verification
+
+Only the API worker should be reachable during this phase. The checklist below replaces the previous Pages + Worker dual setup.
 
 ### Agent issue template
 
@@ -71,7 +55,7 @@ This repository coordinates the infrastructure work required to bring the GoldSh
 
 #### Summary
 
-Fix all DNS mis-points and verify that both the Pages and Worker environments resolve before proceeding with app or pipeline work.
+Fix all DNS mis-points and verify that the Worker environment resolves before proceeding with app or pipeline work.
 
 #### Step-by-step execution
 
@@ -81,32 +65,26 @@ Fix all DNS mis-points and verify that both the Pages and Worker environments re
 
    | Type | Name | Target | Proxy | Purpose |
    | --- | --- | --- | --- | --- |
-   | CNAME | `@` | `goldshore-web.pages.dev` | **Proxied** | root site |
-   | CNAME | `www` | `goldshore-web.pages.dev` | **Proxied** | alias |
    | CNAME | `api` | `workers.dev` | **Proxied** | Worker endpoint placeholder |
    | MX / TXT | keep existing | | | email |
 
-   - Remove all other A/AAAA/CNAME records that point to dev or staging hosts.
+   - Remove A/AAAA/CNAME records that point to unused Pages or staging hosts.
 3. **Verify propagation**
-   - `nslookup goldshore.org` → should return Cloudflare IPs.
    - `nslookup api.goldshore.org` → should return Cloudflare IPs.
-   - Wait until DNS tab shows green checks for all three records.
-4. **Attach domains**
-   - Pages → project `goldshore-web` → Custom Domains → add `goldshore.org` and `www.goldshore.org`.
+   - Wait until the DNS tab shows green checks for the records above.
+4. **Attach domain to Worker**
    - Worker → service `GoldShore` → Triggers → Add Route `api.goldshore.org/*`.
 5. **Verify SSL/TLS**
    - Cloudflare → SSL/TLS → mode = **Full (strict)**.
 6. **Confirm reachability**
-   - `https://goldshore.org` → returns Pages splash (after deploy).
    - `https://api.goldshore.org/health` → returns `ok` (once Worker live).
 7. **Post DNS summary**
    - Include Cloudflare DNS table (redact MX/TXT if sensitive).
-   - Confirm domain verification success for Pages + Worker.
+   - Confirm domain verification success for the Worker route.
 
 ### Next steps after DNS
 
-1. Trigger the first Pages deploy via workflow `deploy-pages.yml` in `goldshore-web` (branch `main`).
-2. Deploy the Worker via workflow `deploy-worker.yml` in this repository.
-3. Verify GitHub App webhooks: App → Recent Deliveries → expect 200 from `/webhook/github`.
+1. Deploy the Worker via workflow `deploy-worker.yml` in this repository.
+2. Verify GitHub App webhooks: App → Recent Deliveries → expect 200 from `/webhook/github`.
 
-> **TL;DR for the agent:** Normalize goldshore.org DNS, attach Pages and Worker domains, ensure SSL is set to Full (strict), then proceed to the initial deploy workflows once verification is complete.
+> **TL;DR for the agent:** Normalize the goldshore.org DNS so only the API worker is routed, ensure SSL is set to Full (strict), then use the Worker deploy workflow once verification is complete.
