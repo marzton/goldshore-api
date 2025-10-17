@@ -1,5 +1,5 @@
 {
-  "name": "@goldshore/utils",
+  "name": "@goldshore-api/packages/utils",
   "private": true,
   "version": "0.0.0"
 }

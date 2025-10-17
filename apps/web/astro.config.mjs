@@ -1,6 +1,6 @@
 import { defineConfig } from 'astro/config';
 
-// Static build; Cloudflare Pages serves /dist.
+// Static build; deploy target serves the /dist output.
 export default defineConfig({
   site: 'https://goldshore.org',
   output: 'static',
