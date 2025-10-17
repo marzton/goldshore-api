@@ -2,33 +2,26 @@ import { ok, bad } from "../lib/util";
 import type { Env } from "../types";
 import { alpaca } from "../lib/providers/alpaca";
 
-export async function getOrders(env: Env, url: URL, cors: HeadersInit) {
-  const status = url.searchParams.get("status") || "open";
-  const data = await alpaca(env, `/orders?status=${encodeURIComponent(status)}`);
-  return ok({ ok: true, data }, cors);
+type OrderPayload = {
+  symbol: string;
+  qty: number | string;
+  side: string;
+  [key: string]: unknown;
+};
+
+function isOrderPayload(value: unknown): value is OrderPayload {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.symbol === "string" && (typeof record.qty === "number" || typeof record.qty === "string") && typeof record.side === "string";
 }
 
-export async function createOrder(env: Env, req: Request, cors: HeadersInit) {
-  const body = (await req.json().catch(() => null)) as unknown;
-  if (!body || typeof body !== "object") return bad("MISSING_FIELDS", 400, cors);
+export async function getOrders(env: Env, url: URL) {
+  const status = url.searchParams.get("status") || "open";
+  return ok({ ok: true, data: await alpaca(env, `/orders?status=${encodeURIComponent(status)}`) });
+}
 
-  const payload = body as Record<string, unknown>;
-  const symbol = payload.symbol;
-  const qtyValue =
-    typeof payload.qty === "number"
-      ? payload.qty
-      : typeof payload.qty === "string"
-        ? Number(payload.qty)
-        : NaN;
-  const side = payload.side;
-
-  if (typeof symbol !== "string" || Number.isNaN(qtyValue) || typeof side !== "string") {
-    return bad("MISSING_FIELDS", 400, cors);
-  }
-
-  const data = await alpaca(env, `/orders`, {
-    method: "POST",
-    body: JSON.stringify({ ...payload, qty: qtyValue })
-  });
-  return ok({ ok: true, data }, cors);
+export async function createOrder(env: Env, req: Request) {
+  const body = await req.json().catch(() => null);
+  if (!isOrderPayload(body)) return bad("MISSING_FIELDS", 400);
+  return ok({ ok: true, data: await alpaca(env, `/orders`, { method: "POST", body: JSON.stringify(body) }) });
 }
