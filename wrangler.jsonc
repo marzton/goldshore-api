@@ -23,14 +23,7 @@
 
   "queues": {
     // Create the backing queue before deploying: `wrangler queues create jobs`
-    "producers": [{ "binding": "JOBS", "queue": "jobs" }],
-    "consumers": [
-      {
-        "queue": "jobs",
-        "max_batch_size": 10,
-        "max_retries": 5
-      }
-    ]
+    "producers": [{ "binding": "JOBS", "queue": "jobs" }]
   },
 
   "vars": {
