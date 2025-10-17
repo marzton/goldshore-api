@@ -1,5 +1,5 @@
 {
-  "name": "@goldshore/admin",
+  "name": "@goldshore/apps/admin",
   "private": true,
   "type": "module",
   "scripts": {

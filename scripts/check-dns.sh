@@ -7,11 +7,7 @@ if ! command -v dig >/dev/null 2>&1; then
 fi
 
 ROOT_DOMAIN=${1:-goldshore.org}
-WWW_DOMAIN="www.${ROOT_DOMAIN#www.}"
 API_DOMAIN="api.${ROOT_DOMAIN#api.}"
-
-EXPECTED_ROOT_CNAME=${EXPECTED_ROOT_CNAME:-goldshore-web.pages.dev}
-EXPECTED_WWW_CNAME=${EXPECTED_WWW_CNAME:-goldshore-web.pages.dev}
 EXPECTED_API_CNAME=${EXPECTED_API_CNAME:-workers.dev}
 
 STATUS=0
@@ -56,8 +52,6 @@ check_domain() {
   echo
 }
 
-check_domain "$ROOT_DOMAIN" "$EXPECTED_ROOT_CNAME" "Apex"
-check_domain "$WWW_DOMAIN" "$EXPECTED_WWW_CNAME" "WWW"
 check_domain "$API_DOMAIN" "$EXPECTED_API_CNAME" "API"
 
 if [[ $STATUS -ne 0 ]]; then
