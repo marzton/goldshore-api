@@ -11,13 +11,26 @@ jobs:
         with:
           { node-version: 20 }
       - run: npm ci || npm i
+      - name: Validate Cloudflare Account ID
+        shell: bash
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID }}
+        run: |
+          if [[ -z "${CLOUDFLARE_ACCOUNT_ID}" ]]; then
+            echo "Cloudflare account ID secret is missing" >&2
+            exit 1
+          fi
+          if [[ ! ${CLOUDFLARE_ACCOUNT_ID} =~ ^[0-9a-fA-F]{32}$ ]]; then
+            echo "Cloudflare account ID must be 32 hexadecimal characters" >&2
+            exit 1
+          fi
       - name: Wrangler whoami
-        run: npx wrangler@4.42.2 whoami
+        run: npx wrangler@4.42.2 whoami --config wrangler.jsonc
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID }}
       - name: Deploy
-        run: npx wrangler@4.42.2 deploy
+        run: npx wrangler@4.42.2 deploy --config wrangler.jsonc
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID }}
