@@ -18,7 +18,7 @@
     {
       "binding": "DB",
       "database_name": "goldshore_db",
-      "database_id": "<D1_ID>"
+      "database_id": "33b71eca-4987-4a0c-8721-c1c777b8b6a3"
     }
   ],
   "r2_buckets": [
@@ -37,7 +37,7 @@
   },
   "vars": {
     "ENV": "production",
-    "CORS_ALLOWED_ORIGINS": "https://goldshore.org,https://web.goldshore.org,https://*.pages.dev,http://localhost:5173",
+    "CORS_ALLOWED_ORIGINS": "https://goldshore.org,https://web.goldshore.org/*,https://api.goldshore.org/*,https://*.pages.dev,http://localhost:5173",
     "QUOTES_MAX_AGE": "30",
     "NEWS_MAX_AGE": "300"
   }
