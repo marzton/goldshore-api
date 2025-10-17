@@ -1,22 +1,16 @@
-name: Deploy Goldshore API Worker
-
+name: Deploy Goldshore API (Workers)
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:
-
+    branches: [ main ]
 jobs:
   deploy:
-  runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - name: Install dependencies
-        run: npm ci || npm i
+        with:
+          node-version: 20
+      - run: npm ci || npm i
       - name: Wrangler whoami
         run: npx wrangler@4.42.2 whoami
         env:
