@@ -1,7 +1,7 @@
 {
   "name": "goldshore-api",
   "main": "src/index.ts",
-  "compatibility_date": "2025-10-17",
+  "compatibility_date": "2025-10-18",
   "routes": [
     {
       "pattern": "api.goldshore.org/*",
