@@ -4,7 +4,7 @@
   "compatibility_date": "2025-10-18",
   "routes": [
     {
-      "pattern": "api.goldshore.org/*",
+      "pattern": "api.goldshore-api.workers.dev",
       "zone_name": "goldshore.org"
     }
   ],
@@ -37,7 +37,7 @@
   },
   "vars": {
     "ENV": "production",
-    "CORS_ALLOWED_ORIGINS": "https://goldshore.org,https://web.goldshore.org/*,https://api.goldshore.org/*,https://*.pages.dev,http://localhost:5173",
+    "CORS_ALLOWED_ORIGINS": "https://goldshore.org,https://*.goldshore.org/*,https://*.goldshore-*.pages.dev,https://*.goldshore-*.workers.dev,https://goldshore.cloudflareaccess.com,http://localhost:5173",
     "QUOTES_MAX_AGE": "30",
     "NEWS_MAX_AGE": "300"
   }
