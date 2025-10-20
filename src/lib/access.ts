@@ -110,7 +110,8 @@ async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | un
     return cache.keys.get(kid);
   }
 
-  await loadJwks(cache, config);
+  const forceReload = !cache.keys.has(kid);
+  await loadJwks(cache, config, forceReload);
   return cache.keys.get(kid);
 }
 
@@ -123,8 +124,8 @@ function getCache(url: string): KeyCache {
   return cache;
 }
 
-async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
-  if (cache.expiresAt > Date.now() && cache.keys.size > 0) {
+async function loadJwks(cache: KeyCache, config: AccessConfig, forceReload = false): Promise<void> {
+  if (!forceReload && cache.expiresAt > Date.now() && cache.keys.size > 0) {
     return;
   }
 
