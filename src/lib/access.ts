@@ -43,6 +43,7 @@ type KeyCache = {
   keys: Map<string, CryptoKey>;
   expiresAt: number;
   inflight: Promise<void> | null;
+  missing: Map<string, number>;
 };
 
 const ALLOWED_ALGORITHMS = new Set(["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]);
@@ -111,20 +112,37 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | undefined> {
   const cache = getCache(config.jwksUrl);
 
-  const cacheValid = cache.expiresAt > Date.now();
+  const now = Date.now();
+  const cacheValid = cache.expiresAt > now;
   if (cacheValid && cache.keys.has(kid)) {
     return cache.keys.get(kid);
   }
 
-  const forceRefresh = cacheValid && !cache.keys.has(kid);
+  const missingUntil = cache.missing.get(kid);
+  const missingValid = typeof missingUntil === "number" && missingUntil > now;
+  const forceRefresh = cacheValid && !cache.keys.has(kid) && !missingValid;
+
   await loadJwks(cache, config, forceRefresh);
-  return cache.keys.get(kid);
+
+  const key = cache.keys.get(kid);
+  if (key) {
+    cache.missing.delete(kid);
+    return key;
+  }
+
+  const afterLoadNow = Date.now();
+  const refreshedValid = cache.expiresAt > afterLoadNow;
+  if (refreshedValid) {
+    cache.missing.set(kid, afterLoadNow + JWKS_CACHE_TTL_MS);
+  }
+
+  return undefined;
 }
 
 function getCache(url: string): KeyCache {
   let cache = keyCaches.get(url);
   if (!cache) {
-    cache = { keys: new Map(), expiresAt: 0, inflight: null };
+    cache = { keys: new Map(), expiresAt: 0, inflight: null, missing: new Map() };
     keyCaches.set(url, cache);
   }
   return cache;
@@ -169,6 +187,9 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, force = false): P
       if (imported.size > 0) {
         cache.keys = imported;
         cache.expiresAt = Date.now() + JWKS_CACHE_TTL_MS;
+        for (const kid of imported.keys()) {
+          cache.missing.delete(kid);
+        }
       } else if (cache.keys.size === 0) {
         cache.expiresAt = 0;
       }
