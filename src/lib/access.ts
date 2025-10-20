@@ -52,20 +52,58 @@ const RSA_HASH_BY_ALGORITHM: Record<"RS256" | "RS384" | "RS512", HashName> = {
   RS384: "SHA-384",
   RS512: "SHA-512",
 };
+    key = await getKey(header.kid, header.alg, config);
+async function getKey(kid: string, alg: string | undefined, config: AccessConfig): Promise<CryptoKey | undefined> {
+  const cacheKey = getCacheKey(kid, alg);
+  const fallbackKey = getCacheKey(kid);
+  if (cache.expiresAt > Date.now()) {
+    const cached = cache.keys.get(cacheKey) ?? cache.keys.get(fallbackKey);
+    if (cached) {
+      return cached;
+    }
+  return cache.keys.get(cacheKey) ?? cache.keys.get(fallbackKey);
 
-export async function requireAccess(req: Request, env?: AccessEnvironment): Promise<boolean> {
-  const jwt = req.headers.get("CF-Access-Jwt-Assertion");
-  if (!jwt) return false;
+function getCacheKey(kid: string, alg?: string): string {
+  return alg ? `${kid}:${alg}` : kid;
+}
 
-  const config = resolveConfig(env);
-  const parts = jwt.split(".");
-  if (parts.length !== 3) return false;
+          const specs = getImportSpecifications(jwk);
+          if (specs.length === 0) return;
 
-  let header: AccessHeader;
-  let payload: AccessPayload;
+          await Promise.all(
+            specs.map(async ({ cacheKey, algorithm }) => {
+              try {
+                const cryptoKey = await crypto.subtle.importKey("jwk", jwk, algorithm, false, ["verify"]);
+                imported.set(cacheKey, cryptoKey);
+              } catch (error) {
+                console.error("failed to import jwk", cacheKey, error);
+              }
+            }),
+          );
+type ImportSpecification = { cacheKey: string; algorithm: SupportedImportParams };
 
-  try {
-    header = decodeSection<AccessHeader>(parts[0]);
+function getImportSpecifications(jwk: AccessJwk): ImportSpecification[] {
+    const algorithms = getRsaAlgorithms(jwk);
+    return algorithms.map((algorithm) => ({
+      cacheKey: getCacheKey(jwk.kid!, algorithm),
+      algorithm: { name: "RSASSA-PKCS1-v1_5", hash: { name: RSA_HASH_BY_ALGORITHM[algorithm] } },
+    }));
+      return [{ cacheKey: getCacheKey(jwk.kid!), algorithm: { name: "ECDSA", namedCurve: curve } }];
+  return [];
+}
+
+function getRsaAlgorithms(jwk: AccessJwk): Array<keyof typeof RSA_HASH_BY_ALGORITHM> {
+  const candidate = typeof jwk.alg === "string" ? jwk.alg.toUpperCase() : undefined;
+
+  if (candidate && isRsaAlgorithm(candidate)) {
+    return [candidate];
+  }
+
+  return Object.keys(RSA_HASH_BY_ALGORITHM) as Array<keyof typeof RSA_HASH_BY_ALGORITHM>;
+}
+
+function isRsaAlgorithm(value: string): value is keyof typeof RSA_HASH_BY_ALGORITHM {
+  return value === "RS256" || value === "RS384" || value === "RS512";
     payload = decodeSection<AccessPayload>(parts[1]);
   } catch (error) {
     console.error("invalid access token payload", error);
