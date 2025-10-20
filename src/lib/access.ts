@@ -95,6 +95,11 @@ export async function requireAccess(req: Request): Promise<boolean> {
         ? joseToDerSignature(rawSignature)
         : rawSignature;
 
+  try {
+    const rawSignature = base64UrlToUint8Array(parts[2]);
+    const signature =
+      verifyParams.name === "ECDSA" ? joseToDerSignature(rawSignature) : rawSignature;
+
     return await crypto.subtle.verify(verifyParams, key, signature, data);
   } catch (error) {
     console.error("access token verification failed", error);
@@ -187,9 +192,6 @@ async function importCachedKey(kid: string, algorithm: AlgorithmDetails): Promis
       console.error("failed to import rsa jwk", kid, error);
       return undefined;
     }
-function getImportAlgorithm(jwk: AccessJwk): SupportedImportParams | null {
-  if (jwk.kty === "RSA") {
-    return { name: "RSASSA-PKCS1-v1_5", hash: { name: rsaHash(jwk.alg) } };
   }
 
   if (algorithm.type === "EC") {
