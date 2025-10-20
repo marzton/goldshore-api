@@ -32,7 +32,7 @@ type EcNamedCurve = "P-256" | "P-384" | "P-521";
 type AccessJwk = JsonWebKey & { kid?: string; kty?: string; crv?: string };
 
 type SupportedImportParams =
-  | { name: "RSASSA-PKCS1-v1_5"; hash: { name: "SHA-256" } }
+  | { name: "RSASSA-PKCS1-v1_5"; hash: { name: HashName } }
   | { name: "ECDSA"; namedCurve: EcNamedCurve };
 
 type VerifyParams =
