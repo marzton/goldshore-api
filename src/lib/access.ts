@@ -58,12 +58,14 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 
   let header: AccessHeader;
   let payload: AccessPayload;
+  let signature: Uint8Array;
 
   try {
     header = decodeSection<AccessHeader>(parts[0]);
     payload = decodeSection<AccessPayload>(parts[1]);
+    signature = base64UrlToUint8Array(parts[2]);
   } catch (error) {
-    console.error("invalid access token payload", error);
+    console.error("invalid access token", error);
     return false;
   }
 
