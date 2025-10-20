@@ -29,10 +29,10 @@ type AccessPayload = {
 type HashName = "SHA-256" | "SHA-384" | "SHA-512";
 type EcNamedCurve = "P-256" | "P-384" | "P-521";
 
-type AccessJwk = JsonWebKey & { kid?: string; kty?: string; crv?: string };
+type AccessJwk = JsonWebKey & { kid?: string; kty?: string; crv?: string; alg?: string };
 
 type SupportedImportParams =
-  | { name: "RSASSA-PKCS1-v1_5"; hash: { name: "SHA-256" } }
+  | { name: "RSASSA-PKCS1-v1_5"; hash: { name: HashName } }
   | { name: "ECDSA"; namedCurve: EcNamedCurve };
 
 type VerifyParams =
@@ -129,7 +129,11 @@ async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | un
   if (key) {
     cache.missingKids.delete(kid);
   } else if (!hasKey) {
-    cache.missingKids.set(kid, Date.now());
+    if (lastMiss === 0) {
+      cache.missingKids.set(kid, now);
+    } else if (isNegativeStale) {
+      cache.missingKids.set(kid, Date.now());
+    }
   }
 
   return key;
@@ -210,7 +214,8 @@ function resolveConfig(env?: AccessEnvironment): AccessConfig {
 
 function getImportAlgorithm(jwk: AccessJwk): SupportedImportParams | null {
   if (jwk.kty === "RSA") {
-    return { name: "RSASSA-PKCS1-v1_5", hash: { name: "SHA-256" } };
+    const hashName = rsaHashFromAlg(jwk.alg);
+    return { name: "RSASSA-PKCS1-v1_5", hash: { name: hashName ?? "SHA-256" } };
   }
 
   if (jwk.kty === "EC" && typeof jwk.crv === "string") {
@@ -272,6 +277,21 @@ function curveHash(curve: EcNamedCurve | undefined): HashName {
       return "SHA-512";
     default:
       return "SHA-256";
+  }
+}
+
+function rsaHashFromAlg(alg?: string): HashName | null {
+  if (!alg) return null;
+
+  switch (alg.toUpperCase()) {
+    case "RS384":
+      return "SHA-384";
+    case "RS512":
+      return "SHA-512";
+    case "RS256":
+      return "SHA-256";
+    default:
+      return null;
   }
 }
 
