@@ -29,10 +29,10 @@ type AccessPayload = {
 type HashName = "SHA-256" | "SHA-384" | "SHA-512";
 type EcNamedCurve = "P-256" | "P-384" | "P-521";
 
-type AccessJwk = JsonWebKey & { kid?: string; kty?: string; crv?: string };
+type AccessJwk = JsonWebKey & { kid?: string; kty?: string; crv?: string; alg?: string };
 
 type SupportedImportParams =
-  | { name: "RSASSA-PKCS1-v1_5"; hash: { name: "SHA-256" } }
+  | { name: "RSASSA-PKCS1-v1_5"; hash: { name: HashName } }
   | { name: "ECDSA"; namedCurve: EcNamedCurve };
 
 type VerifyParams =
@@ -47,6 +47,11 @@ type KeyCache = {
 };
 
 const ALLOWED_ALGORITHMS = new Set(["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]);
+const RSA_HASH_BY_ALGORITHM: Record<"RS256" | "RS384" | "RS512", HashName> = {
+  RS256: "SHA-256",
+  RS384: "SHA-384",
+  RS512: "SHA-512",
+};
 const keyCaches = new Map<string, KeyCache>();
 
 export async function requireAccess(req: Request, env?: AccessEnvironment): Promise<boolean> {
@@ -218,7 +223,14 @@ function resolveConfig(env?: AccessEnvironment): AccessConfig {
 
 function getImportAlgorithm(jwk: AccessJwk): SupportedImportParams | null {
   if (jwk.kty === "RSA") {
-    return { name: "RSASSA-PKCS1-v1_5", hash: { name: "SHA-256" } };
+    const algorithm = typeof jwk.alg === "string" ? jwk.alg : "RS256";
+    if (algorithm in RSA_HASH_BY_ALGORITHM) {
+      const hashName = RSA_HASH_BY_ALGORITHM[algorithm as keyof typeof RSA_HASH_BY_ALGORITHM];
+      return { name: "RSASSA-PKCS1-v1_5", hash: { name: hashName } };
+    }
+
+    console.error("unsupported rsa algorithm", jwk.alg);
+    return null;
   }
 
   if (jwk.kty === "EC" && typeof jwk.crv === "string") {
