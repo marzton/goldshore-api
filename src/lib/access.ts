@@ -80,7 +80,9 @@ export async function requireAccess(req: Request): Promise<boolean> {
   }
 
   try {
-    return await crypto.subtle.verify(verifyParams, key, signature, data);
+    const formattedSignature =
+      verifyParams.name === "ECDSA" ? joseToDer(signature) : signature;
+    return await crypto.subtle.verify(verifyParams, key, formattedSignature, data);
   } catch (error) {
     console.error("access token verification failed", error);
     return false;
@@ -185,6 +187,76 @@ function decodeSection<T>(section: string): T {
   const bytes = base64UrlToUint8Array(section);
   const text = new TextDecoder().decode(bytes);
   return JSON.parse(text) as T;
+}
+
+function joseToDer(signature: Uint8Array): Uint8Array {
+  const length = signature.length / 2;
+  const r = signature.slice(0, length);
+  const s = signature.slice(length);
+
+  const rDer = encodeDerInteger(r);
+  const sDer = encodeDerInteger(s);
+  const sequenceLength = rDer.length + sDer.length;
+  const lengthBytes = encodeDerLength(sequenceLength);
+
+  const der = new Uint8Array(1 + lengthBytes.length + sequenceLength);
+  der[0] = 0x30;
+  der.set(lengthBytes, 1);
+
+  let offset = 1 + lengthBytes.length;
+  der.set(rDer, offset);
+  offset += rDer.length;
+  der.set(sDer, offset);
+
+  return der;
+}
+
+function encodeDerInteger(integer: Uint8Array): Uint8Array {
+  let offset = 0;
+  while (offset < integer.length && integer[offset] === 0) {
+    offset += 1;
+  }
+
+  let value = integer.slice(offset);
+  if (value.length === 0) {
+    value = new Uint8Array([0]);
+  }
+
+  if (value[0] & 0x80) {
+    const extended = new Uint8Array(value.length + 1);
+    extended[0] = 0;
+    extended.set(value, 1);
+    value = extended;
+  }
+
+  const lengthBytes = encodeDerLength(value.length);
+  const der = new Uint8Array(1 + lengthBytes.length + value.length);
+  der[0] = 0x02;
+  der.set(lengthBytes, 1);
+  der.set(value, 1 + lengthBytes.length);
+
+  return der;
+}
+
+function encodeDerLength(length: number): Uint8Array {
+  if (length <= 0x7f) {
+    return new Uint8Array([length]);
+  }
+
+  const bytes: number[] = [];
+  let value = length;
+  while (value > 0) {
+    bytes.unshift(value & 0xff);
+    value >>= 8;
+  }
+
+  const result = new Uint8Array(1 + bytes.length);
+  result[0] = 0x80 | bytes.length;
+  for (let i = 0; i < bytes.length; i += 1) {
+    result[i + 1] = bytes[i];
+  }
+
+  return result;
 }
 
 function base64UrlToUint8Array(value: string): Uint8Array {
