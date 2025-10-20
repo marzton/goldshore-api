@@ -90,6 +90,12 @@ export async function requireAccess(req: Request): Promise<boolean> {
 
   try {
     const rawSignature = base64UrlToUint8Array(parts[2]);
+
+    if (verifyParams.name === "ECDSA" && rawSignature.length % 2 !== 0) {
+      console.error("access token verification failed", new Error("invalid ECDSA signature length"));
+      return false;
+    }
+
     const signature =
       verifyParams.name === "ECDSA" ? joseToDerSignature(rawSignature) : rawSignature;
 
