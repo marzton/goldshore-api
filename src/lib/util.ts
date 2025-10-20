@@ -1,17 +1,20 @@
+const jsonHeaders = (headers: HeadersInit = {}) => {
+  const responseHeaders = new Headers(headers);
+  responseHeaders.set("Content-Type", "application/json; charset=utf-8");
+  return responseHeaders;
+};
+
 export const ok = (data: unknown, headers: HeadersInit = {}) =>
   new Response(JSON.stringify(data), {
     status: 200,
-    headers: { "Content-Type": "application/json; charset=utf-8", ...headers }
+    headers: jsonHeaders(headers)
   });
 
-export const bad = (msg: string, status = 400) =>
-  new Response(JSON.stringify({ ok: false, error: msg }), {
+export const bad = (msg: string, status = 400, headers: HeadersInit = {}, hint?: string) =>
+  new Response(JSON.stringify({ ok: false, error: msg, ...(hint ? { hint } : {}) }), {
     status,
-    headers: { "Content-Type": "application/json; charset=utf-8" }
+    headers: jsonHeaders(headers)
   });
 
 export const unauthorized = (headers: HeadersInit = {}) =>
-  new Response(JSON.stringify({ ok: false, error: "UNAUTHORIZED" }), {
-    status: 401,
-    headers: { "Content-Type": "application/json; charset=utf-8", ...headers }
-  });
+  bad("AUTH_REQUIRED", 401, headers);
