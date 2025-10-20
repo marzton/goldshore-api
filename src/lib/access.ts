@@ -197,9 +197,6 @@ async function importCachedKey(kid: string, algorithm: AlgorithmDetails): Promis
       console.error("failed to import rsa jwk", kid, error);
       return undefined;
     }
-function getImportAlgorithm(jwk: AccessJwk): SupportedImportParams | null {
-  if (jwk.kty === "RSA") {
-    return { name: "RSASSA-PKCS1-v1_5", hash: { name: rsaHash(jwk.alg) } };
   }
 
   if (algorithm.type === "EC") {
