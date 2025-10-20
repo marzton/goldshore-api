@@ -91,13 +91,6 @@ export async function requireAccess(req: Request): Promise<boolean> {
   try {
     const rawSignature = base64UrlToUint8Array(parts[2]);
     const signature =
-      verifyParams.name === "ECDSA"
-        ? joseToDerSignature(rawSignature)
-        : rawSignature;
-
-  try {
-    const rawSignature = base64UrlToUint8Array(parts[2]);
-    const signature =
       verifyParams.name === "ECDSA" ? joseToDerSignature(rawSignature) : rawSignature;
 
     return await crypto.subtle.verify(verifyParams, key, signature, data);
