@@ -4,7 +4,12 @@ export interface Env {
   R2?: R2Bucket;
   JOBS?: Queue;
 
+  ACCESS_AUDIENCE?: string;
+  ACCESS_ISSUER?: string;
+  ACCESS_JWKS_URL?: string;
+
   CORS_ALLOWED_ORIGINS?: string;
+  CORS_ORIGINS?: string;
   QUOTES_MAX_AGE?: string;
   NEWS_MAX_AGE?: string;
 

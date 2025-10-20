@@ -37,8 +37,8 @@ const resolveAllowedOrigin = (origin: string, allow: OriginRule[]) => {
 
 export function corsHeaders(env: Env, req: Request): HeadersInit {
   const origin = req.headers.get("Origin") || "";
-  const allowConfig = env.CORS_ALLOWED_ORIGINS || "";
-  const allowed = buildAllowedOrigins(allowConfig);
+  const allowList = env.CORS_ALLOWED_ORIGINS || env.CORS_ORIGINS || "";
+  const allowed = buildAllowedOrigins(allowList);
   const headers: Record<string, string> = {
     "Access-Control-Allow-Methods": ALLOWED_METHODS,
     "Access-Control-Allow-Headers": ALLOWED_HEADERS,
