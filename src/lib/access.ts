@@ -1,4 +1,5 @@
-const ACCESS_AUDIENCE = "d79c2b6106887967cfda1cbcea881399352402f5833084b7f3844cd29c205afa";
+const ACCESS_AUDIENCE =
+  "d79c2b6106887967cfda1cbcea881399352402f5833084b7f3844cd29c205afa";
 const ACCESS_ISSUER = "https://goldshore.cloudflareaccess.com";
 const ACCESS_JWKS_URL = `${ACCESS_ISSUER}/cdn-cgi/access/certs`;
 const JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -17,7 +18,12 @@ type AccessPayload = {
 type HashName = "SHA-256" | "SHA-384" | "SHA-512";
 type EcNamedCurve = "P-256" | "P-384" | "P-521";
 
-type AccessJwk = JsonWebKey & { kid?: string; kty?: string; crv?: string; alg?: string };
+type AccessJwk = JsonWebKey & {
+  kid?: string;
+  kty?: string;
+  crv?: string;
+  alg?: string;
+};
 
 type SupportedImportParams =
   | { name: "RSASSA-PKCS1-v1_5"; hash: { name: HashName } }
@@ -31,7 +37,14 @@ type AlgorithmDetails =
   | { type: "RSA"; hash: HashName }
   | { type: "EC"; hash: HashName };
 
-const ALLOWED_ALGORITHMS = new Set(["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]);
+const ALLOWED_ALGORITHMS = new Set([
+  "RS256",
+  "RS384",
+  "RS512",
+  "ES256",
+  "ES384",
+  "ES512",
+]);
 
 type CachedKeyEntry = {
   jwk: AccessJwk;
@@ -88,18 +101,12 @@ export async function requireAccess(req: Request): Promise<boolean> {
   const data = encoder.encode(`${parts[0]}.${parts[1]}`);
   const verifyParams = getVerifyParams(algorithmDetails);
 
-  try {
-    const rawSignature = base64UrlToUint8Array(parts[2]);
-    const signature =
-      verifyParams.name === "ECDSA"
-        ? joseToDerSignature(rawSignature)
-        : rawSignature;
+  const signature = decodeSignature(parts[2], verifyParams);
+  if (!signature) {
+    return false;
+  }
 
   try {
-    const rawSignature = base64UrlToUint8Array(parts[2]);
-    const signature =
-      verifyParams.name === "ECDSA" ? joseToDerSignature(rawSignature) : rawSignature;
-
     return await crypto.subtle.verify(verifyParams, key, signature, data);
   } catch (error) {
     console.error("access token verification failed", error);
@@ -107,7 +114,10 @@ export async function requireAccess(req: Request): Promise<boolean> {
   }
 }
 
-async function getKey(kid: string, algorithm: AlgorithmDetails): Promise<CryptoKey | undefined> {
+async function getKey(
+  kid: string,
+  algorithm: AlgorithmDetails,
+): Promise<CryptoKey | undefined> {
   if (cacheExpiresAt > Date.now() && cachedKeys.has(kid)) {
     return importCachedKey(kid, algorithm);
   }
@@ -165,7 +175,10 @@ async function loadJwks(): Promise<void> {
   }
 }
 
-async function importCachedKey(kid: string, algorithm: AlgorithmDetails): Promise<CryptoKey | undefined> {
+async function importCachedKey(
+  kid: string,
+  algorithm: AlgorithmDetails,
+): Promise<CryptoKey | undefined> {
   const entry = cachedKeys.get(kid);
   if (!entry) return undefined;
 
@@ -185,7 +198,13 @@ async function importCachedKey(kid: string, algorithm: AlgorithmDetails): Promis
     };
 
     try {
-      const cryptoKey = await crypto.subtle.importKey("jwk", entry.jwk, importParams, false, ["verify"]);
+      const cryptoKey = await crypto.subtle.importKey(
+        "jwk",
+        entry.jwk,
+        importParams,
+        false,
+        ["verify"],
+      );
       entry.rsaKeys.set(algorithm.hash, cryptoKey);
       return cryptoKey;
     } catch (error) {
@@ -203,7 +222,13 @@ async function importCachedKey(kid: string, algorithm: AlgorithmDetails): Promis
     if (!importParams) return undefined;
 
     try {
-      const cryptoKey = await crypto.subtle.importKey("jwk", entry.jwk, importParams, false, ["verify"]);
+      const cryptoKey = await crypto.subtle.importKey(
+        "jwk",
+        entry.jwk,
+        importParams,
+        false,
+        ["verify"],
+      );
       entry.ecKey = cryptoKey;
       return cryptoKey;
     } catch (error) {
@@ -271,7 +296,8 @@ function decodeSection<T>(section: string): T {
 
 function base64UrlToUint8Array(value: string): Uint8Array {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  const padding = normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
+  const padding =
+    normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
   const binary = atob(normalized + padding);
   const length = binary.length;
   const bytes = new Uint8Array(length);
@@ -355,6 +381,23 @@ function encodeLength(length: number): Uint8Array {
   }
 
   return Uint8Array.of(0x82, (length >> 8) & 0xff, length & 0xff);
+}
+
+function decodeSignature(
+  segment: string,
+  verifyParams: VerifyParams,
+): Uint8Array | null {
+  try {
+    const rawSignature = base64UrlToUint8Array(segment);
+    if (verifyParams.name === "ECDSA") {
+      return joseToDerSignature(rawSignature);
+    }
+
+    return rawSignature;
+  } catch (error) {
+    console.error("invalid access token signature", error);
+    return null;
+  }
 }
 
 function rsaHash(alg: string | undefined): HashName {
