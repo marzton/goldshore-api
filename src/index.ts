@@ -23,7 +23,7 @@ export default {
       return ok({ ok: true, service: "goldshore-api", time: new Date().toISOString() }, CH);
 
     if (url.pathname.startsWith("/v1/")) {
-      if (!(await requireAccess(req))) return unauthorized(CH);
+      if (!(await requireAccess(req, env))) return unauthorized(CH);
 
       if (url.pathname === "/v1/whoami") {
         const email = req.headers.get("CF-Access-Authenticated-User-Email") || null;
