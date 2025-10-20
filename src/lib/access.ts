@@ -70,24 +70,22 @@ export async function requireAccess(req: Request): Promise<boolean> {
 
   if (!key) return false;
 
-  const encoder = new TextEncoder();
-  const data = encoder.encode(`${parts[0]}.${parts[1]}`);
-  let signature = base64UrlToUint8Array(parts[2]);
-
   const verifyParams = getVerifyParams(key);
   if (!verifyParams) {
     console.error("unsupported key algorithm", key.algorithm);
     return false;
   }
 
-  if (verifyParams.name === "ECDSA") {
-    try {
-      signature = joseToDer(signature);
-    } catch (error) {
-      console.error("failed to normalize ecdsa signature", error);
-      return false;
-    }
+  let signature: BufferSource;
+  try {
+    signature = decodeSignature(parts[2], verifyParams.name);
+  } catch (error) {
+    console.error("failed to normalize signature", error);
+    return false;
   }
+
+  const encoder = new TextEncoder();
+  const data = encoder.encode(`${parts[0]}.${parts[1]}`);
 
   try {
     return await crypto.subtle.verify(verifyParams, key, signature, data);
@@ -309,6 +307,18 @@ function joseToDer(signature: Uint8Array): Uint8Array {
   der.set(sDer, 2 + rDer.length);
 
   return der;
+}
+
+function decodeSignature(segment: string, algorithm: VerifyParams["name"]): BufferSource {
+  const signature = base64UrlToUint8Array(segment);
+  if (algorithm === "ECDSA") {
+    const der = joseToDer(signature);
+    const { buffer, byteOffset, byteLength } = der;
+    return (buffer as ArrayBuffer).slice(byteOffset, byteOffset + byteLength);
+  }
+
+  const { buffer, byteOffset, byteLength } = signature;
+  return (buffer as ArrayBuffer).slice(byteOffset, byteOffset + byteLength);
 }
 
 function derEncodeInteger(source: Uint8Array): Uint8Array {
