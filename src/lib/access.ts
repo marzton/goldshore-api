@@ -43,6 +43,7 @@ type KeyCache = {
   keys: Map<string, CryptoKey>;
   expiresAt: number;
   inflight: Promise<void> | null;
+  missingKids: Map<string, number>;
 };
 
 const ALLOWED_ALGORITHMS = new Set(["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]);
@@ -52,6 +53,7 @@ const RSA_HASH_BY_ALG = new Map<string, HashName>([
   ["RS512", "SHA-512"],
 ]);
 const keyCaches = new Map<string, KeyCache>();
+const NEGATIVE_CACHE_TTL_MS = 60 * 1000;
 
 export async function requireAccess(req: Request, env?: AccessEnvironment): Promise<boolean> {
   const jwt = req.headers.get("CF-Access-Jwt-Assertion");
@@ -135,14 +137,14 @@ async function getKey(kid: string, alg: string, config: AccessConfig): Promise<C
 function getCache(url: string): KeyCache {
   let cache = keyCaches.get(url);
   if (!cache) {
-    cache = { keys: new Map(), expiresAt: 0, inflight: null };
+    cache = { keys: new Map(), expiresAt: 0, inflight: null, missingKids: new Map() };
     keyCaches.set(url, cache);
   }
   return cache;
 }
 
-async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
-  if (cache.expiresAt > Date.now() && cache.keys.size > 0) {
+async function loadJwks(cache: KeyCache, config: AccessConfig, forceReload = false): Promise<void> {
+  if (!forceReload && cache.expiresAt > Date.now() && cache.keys.size > 0) {
     return;
   }
 
@@ -199,6 +201,7 @@ async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
       if (imported.size > 0) {
         cache.keys = imported;
         cache.expiresAt = Date.now() + JWKS_CACHE_TTL_MS;
+        cache.missingKids.clear();
       } else if (cache.keys.size === 0) {
         cache.expiresAt = 0;
       }
@@ -354,7 +357,13 @@ function curveHash(curve: EcNamedCurve | undefined): HashName {
 }
 
 function normalizeIssuer(value: string): string {
-  return value.replace(/\/+$/, "");
+  let end = value.length;
+
+  while (end > 0 && value.charCodeAt(end - 1) === 47 /* '/' */) {
+    end -= 1;
+  }
+
+  return end === value.length ? value : value.slice(0, end);
 }
 
 export default requireAccess;
