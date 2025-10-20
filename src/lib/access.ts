@@ -1,7 +1,19 @@
-const ACCESS_AUDIENCE = "d79c2b6106887967cfda1cbcea881399352402f5833084b7f3844cd29c205afa";
-const ACCESS_ISSUER = "https://goldshore.cloudflareaccess.com";
-const ACCESS_JWKS_URL = `${ACCESS_ISSUER}/cdn-cgi/access/certs`;
+const DEFAULT_ACCESS_AUDIENCE = "d79c2b6106887967cfda1cbcea881399352402f5833084b7f3844cd29c205afa";
+const DEFAULT_ACCESS_ISSUER = "https://goldshore.cloudflareaccess.com";
+const JWKS_PATH = "/cdn-cgi/access/certs";
 const JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+export interface AccessEnvironment {
+  ACCESS_AUDIENCE?: string;
+  ACCESS_ISSUER?: string;
+  ACCESS_JWKS_URL?: string;
+}
+
+interface AccessConfig {
+  audience: string;
+  issuer: string;
+  jwksUrl: string;
+}
 
 type AccessHeader = {
   kid?: string;
@@ -27,16 +39,20 @@ type VerifyParams =
   | { name: "RSASSA-PKCS1-v1_5" }
   | { name: "ECDSA"; hash: { name: HashName } };
 
+type KeyCache = {
+  keys: Map<string, CryptoKey>;
+  expiresAt: number;
+  inflight: Promise<void> | null;
+};
+
 const ALLOWED_ALGORITHMS = new Set(["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]);
+const keyCaches = new Map<string, KeyCache>();
 
-let cachedKeys: Map<string, CryptoKey> = new Map();
-let cacheExpiresAt = 0;
-let inflightFetch: Promise<void> | null = null;
-
-export async function requireAccess(req: Request): Promise<boolean> {
+export async function requireAccess(req: Request, env?: AccessEnvironment): Promise<boolean> {
   const jwt = req.headers.get("CF-Access-Jwt-Assertion");
   if (!jwt) return false;
 
+  const config = resolveConfig(env);
   const parts = jwt.split(".");
   if (parts.length !== 3) return false;
 
@@ -55,13 +71,13 @@ export async function requireAccess(req: Request): Promise<boolean> {
     return false;
   }
 
-  if (!payload || !isAudienceValid(payload.aud)) return false;
+  if (!payload || !isAudienceValid(payload.aud, config.audience)) return false;
   if (!payload.exp || payload.exp * 1000 <= Date.now()) return false;
-  if (payload.iss !== ACCESS_ISSUER) return false;
+  if (!payload.iss || normalizeIssuer(payload.iss) !== config.issuer) return false;
 
   let key: CryptoKey | undefined;
   try {
-    key = await getKey(header.kid);
+    key = await getKey(header.kid, config);
   } catch (error) {
     console.error("failed to load access signing keys", error);
     return false;
@@ -80,48 +96,41 @@ export async function requireAccess(req: Request): Promise<boolean> {
   }
 
   try {
-    const formattedSignature = formatSignature(signature, verifyParams);
-    if (!formattedSignature) {
-      console.error("unsupported signature format");
-      return false;
-    }
-
-    return await crypto.subtle.verify(verifyParams, key, formattedSignature, data);
+    return await crypto.subtle.verify(verifyParams, key, signature, data);
   } catch (error) {
     console.error("access token verification failed", error);
     return false;
   }
 }
 
-function formatSignature(signature: Uint8Array, verifyParams: VerifyParams): Uint8Array | null {
-  if (verifyParams.name !== "ECDSA") {
-    return signature;
+async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | undefined> {
+  const cache = getCache(config.jwksUrl);
+
+  if (cache.expiresAt > Date.now() && cache.keys.has(kid)) {
+    return cache.keys.get(kid);
   }
 
-  if (signature.length === 0 || signature.length % 2 !== 0) {
-    return null;
-  }
-
-  return joseToDer(signature);
+  await loadJwks(cache, config);
+  return cache.keys.get(kid);
 }
 
-async function getKey(kid: string): Promise<CryptoKey | undefined> {
-  if (cacheExpiresAt > Date.now() && cachedKeys.has(kid)) {
-    return cachedKeys.get(kid);
+function getCache(url: string): KeyCache {
+  let cache = keyCaches.get(url);
+  if (!cache) {
+    cache = { keys: new Map(), expiresAt: 0, inflight: null };
+    keyCaches.set(url, cache);
   }
-
-  await loadJwks();
-  return cachedKeys.get(kid);
+  return cache;
 }
 
-async function loadJwks(): Promise<void> {
-  if (cacheExpiresAt > Date.now() && cachedKeys.size > 0) {
+async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
+  if (cache.expiresAt > Date.now() && cache.keys.size > 0) {
     return;
   }
 
-  if (!inflightFetch) {
-    inflightFetch = (async () => {
-      const res = await fetch(ACCESS_JWKS_URL, {
+  if (!cache.inflight) {
+    cache.inflight = (async () => {
+      const res = await fetch(config.jwksUrl, {
         cf: { cacheEverything: true, cacheTtl: JWKS_CACHE_TTL_MS / 1000 },
         headers: { Accept: "application/json" },
       });
@@ -132,8 +141,8 @@ async function loadJwks(): Promise<void> {
 
       const body = await res.json<{ keys?: JsonWebKey[] }>();
       const keys = (body.keys ?? []) as AccessJwk[];
+      const imported = new Map<string, CryptoKey>();
 
-      const map = new Map<string, CryptoKey>();
       await Promise.all(
         keys.map(async (jwk) => {
           if (!jwk.kid) return;
@@ -143,30 +152,38 @@ async function loadJwks(): Promise<void> {
 
           try {
             const cryptoKey = await crypto.subtle.importKey("jwk", jwk, algorithm, false, ["verify"]);
-            map.set(jwk.kid, cryptoKey);
+            imported.set(jwk.kid, cryptoKey);
           } catch (error) {
             console.error("failed to import jwk", jwk.kid, error);
           }
         }),
       );
 
-      if (map.size > 0) {
-        cachedKeys = map;
-        cacheExpiresAt = Date.now() + JWKS_CACHE_TTL_MS;
-      } else {
-        cacheExpiresAt = 0;
+      if (imported.size > 0) {
+        cache.keys = imported;
+        cache.expiresAt = Date.now() + JWKS_CACHE_TTL_MS;
+      } else if (cache.keys.size === 0) {
+        cache.expiresAt = 0;
       }
     })().catch((error) => {
-      inflightFetch = null;
+      cache.inflight = null;
       throw error;
     });
   }
 
   try {
-    await inflightFetch;
+    await cache.inflight;
   } finally {
-    inflightFetch = null;
+    cache.inflight = null;
   }
+}
+
+function resolveConfig(env?: AccessEnvironment): AccessConfig {
+  const audience = env?.ACCESS_AUDIENCE?.trim() || DEFAULT_ACCESS_AUDIENCE;
+  const issuer = normalizeIssuer(env?.ACCESS_ISSUER || DEFAULT_ACCESS_ISSUER);
+  const jwksUrl = (env?.ACCESS_JWKS_URL && env.ACCESS_JWKS_URL.trim()) || `${issuer}${JWKS_PATH}`;
+
+  return { audience, issuer, jwksUrl };
 }
 
 function getImportAlgorithm(jwk: AccessJwk): SupportedImportParams | null {
@@ -205,76 +222,6 @@ function decodeSection<T>(section: string): T {
   return JSON.parse(text) as T;
 }
 
-function joseToDer(signature: Uint8Array): Uint8Array {
-  const length = signature.length / 2;
-  const r = signature.slice(0, length);
-  const s = signature.slice(length);
-
-  const rDer = encodeDerInteger(r);
-  const sDer = encodeDerInteger(s);
-  const sequenceLength = rDer.length + sDer.length;
-  const lengthBytes = encodeDerLength(sequenceLength);
-
-  const der = new Uint8Array(1 + lengthBytes.length + sequenceLength);
-  der[0] = 0x30;
-  der.set(lengthBytes, 1);
-
-  let offset = 1 + lengthBytes.length;
-  der.set(rDer, offset);
-  offset += rDer.length;
-  der.set(sDer, offset);
-
-  return der;
-}
-
-function encodeDerInteger(integer: Uint8Array): Uint8Array {
-  let offset = 0;
-  while (offset < integer.length && integer[offset] === 0) {
-    offset += 1;
-  }
-
-  let value = integer.slice(offset);
-  if (value.length === 0) {
-    value = new Uint8Array([0]);
-  }
-
-  if (value[0] & 0x80) {
-    const extended = new Uint8Array(value.length + 1);
-    extended[0] = 0;
-    extended.set(value, 1);
-    value = extended;
-  }
-
-  const lengthBytes = encodeDerLength(value.length);
-  const der = new Uint8Array(1 + lengthBytes.length + value.length);
-  der[0] = 0x02;
-  der.set(lengthBytes, 1);
-  der.set(value, 1 + lengthBytes.length);
-
-  return der;
-}
-
-function encodeDerLength(length: number): Uint8Array {
-  if (length <= 0x7f) {
-    return new Uint8Array([length]);
-  }
-
-  const bytes: number[] = [];
-  let value = length;
-  while (value > 0) {
-    bytes.unshift(value & 0xff);
-    value >>= 8;
-  }
-
-  const result = new Uint8Array(1 + bytes.length);
-  result[0] = 0x80 | bytes.length;
-  for (let i = 0; i < bytes.length; i += 1) {
-    result[i + 1] = bytes[i];
-  }
-
-  return result;
-}
-
 function base64UrlToUint8Array(value: string): Uint8Array {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
   const padding = normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
@@ -289,10 +236,10 @@ function base64UrlToUint8Array(value: string): Uint8Array {
   return bytes;
 }
 
-function isAudienceValid(aud: AccessPayload["aud"]): boolean {
+function isAudienceValid(aud: AccessPayload["aud"], expected: string): boolean {
   if (!aud) return false;
-  if (typeof aud === "string") return aud === ACCESS_AUDIENCE;
-  return aud.includes(ACCESS_AUDIENCE);
+  if (typeof aud === "string") return aud === expected;
+  return aud.includes(expected);
 }
 
 function curveHash(curve: EcNamedCurve | undefined): HashName {
@@ -304,6 +251,16 @@ function curveHash(curve: EcNamedCurve | undefined): HashName {
     default:
       return "SHA-256";
   }
+}
+
+function normalizeIssuer(value: string): string {
+  let end = value.length;
+
+  while (end > 0 && value.charCodeAt(end - 1) === 47 /* '/' */) {
+    end -= 1;
+  }
+
+  return end === value.length ? value : value.slice(0, end);
 }
 
 export default requireAccess;
