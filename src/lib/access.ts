@@ -167,10 +167,10 @@ async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
 
           if (jwk.kty === "RSA") {
             await Promise.all(
-              [...RSA_HASH_BY_ALG.entries()].map(async ([alg, hashName]) => {
+              Array.from(RSA_HASH_BY_ALG.keys()).map(async (alg) => {
                 if (!ALLOWED_ALGORITHMS.has(alg)) return;
 
-                const algorithm = getImportAlgorithm(jwk, hashName);
+                const algorithm = getImportAlgorithm(jwk, alg);
                 if (!algorithm) return;
 
                 try {
@@ -230,9 +230,15 @@ function getCacheKey(kid: string, alg?: string): string {
   return kid;
 }
 
-function getImportAlgorithm(jwk: AccessJwk, hashName?: HashName): SupportedImportParams | null {
+function getImportAlgorithm(jwk: AccessJwk, alg?: string): SupportedImportParams | null {
   if (jwk.kty === "RSA") {
-    const hash = hashName ?? "SHA-256";
+    const hash =
+      getRsaHash(alg) || (typeof jwk.alg === "string" ? getRsaHash(jwk.alg) : undefined);
+
+    if (!hash) {
+      return null;
+    }
+
     return { name: "RSASSA-PKCS1-v1_5", hash: { name: hash } };
   }
 
@@ -244,6 +250,10 @@ function getImportAlgorithm(jwk: AccessJwk, hashName?: HashName): SupportedImpor
   }
 
   return null;
+}
+
+function getRsaHash(alg?: string): HashName | undefined {
+  return alg ? RSA_HASH_BY_ALG.get(alg) : undefined;
 }
 
 function getVerifyParams(key: CryptoKey): VerifyParams | null {
