@@ -43,10 +43,12 @@ type KeyCache = {
   keys: Map<string, CryptoKey>;
   expiresAt: number;
   inflight: Promise<void> | null;
+  missingKids: Map<string, number>;
 };
 
 const ALLOWED_ALGORITHMS = new Set(["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]);
 const keyCaches = new Map<string, KeyCache>();
+const NEGATIVE_CACHE_TTL_MS = 60 * 1000;
 
 export async function requireAccess(req: Request, env?: AccessEnvironment): Promise<boolean> {
   const jwt = req.headers.get("CF-Access-Jwt-Assertion");
@@ -105,20 +107,38 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 
 async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | undefined> {
   const cache = getCache(config.jwksUrl);
+  const now = Date.now();
 
-  if (cache.expiresAt > Date.now() && cache.keys.has(kid)) {
+  if (cache.expiresAt > now && cache.keys.has(kid)) {
     return cache.keys.get(kid);
   }
 
-  const forceReload = !cache.keys.has(kid);
-  await loadJwks(cache, config, forceReload);
-  return cache.keys.get(kid);
+  const hasKey = cache.keys.has(kid);
+  const lastMiss = cache.missingKids.get(kid) ?? 0;
+  const isNegativeStale = now - lastMiss >= NEGATIVE_CACHE_TTL_MS;
+  const shouldForceReload = !hasKey && (cache.expiresAt <= now || isNegativeStale);
+
+  if (shouldForceReload) {
+    await loadJwks(cache, config, true);
+  } else {
+    await loadJwks(cache, config);
+  }
+
+  const key = cache.keys.get(kid);
+
+  if (key) {
+    cache.missingKids.delete(kid);
+  } else if (!hasKey) {
+    cache.missingKids.set(kid, Date.now());
+  }
+
+  return key;
 }
 
 function getCache(url: string): KeyCache {
   let cache = keyCaches.get(url);
   if (!cache) {
-    cache = { keys: new Map(), expiresAt: 0, inflight: null };
+    cache = { keys: new Map(), expiresAt: 0, inflight: null, missingKids: new Map() };
     keyCaches.set(url, cache);
   }
   return cache;
@@ -163,6 +183,7 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, forceReload = fal
       if (imported.size > 0) {
         cache.keys = imported;
         cache.expiresAt = Date.now() + JWKS_CACHE_TTL_MS;
+        cache.missingKids.clear();
       } else if (cache.keys.size === 0) {
         cache.expiresAt = 0;
       }
