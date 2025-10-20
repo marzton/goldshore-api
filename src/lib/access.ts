@@ -125,12 +125,26 @@ async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | un
     forceRefresh = now >= nextAllowedRefresh;
   }
 
-  await loadJwks(cache, config, forceRefresh);
+  let refreshError: unknown;
+  try {
+    await loadJwks(cache, config, forceRefresh);
+  } catch (error) {
+    refreshError = error;
+  }
 
   const refreshedKey = cache.keys.get(kid);
   if (refreshedKey) {
     cache.missing.delete(kid);
     return refreshedKey;
+  }
+
+  if (refreshError) {
+    if (cachedKey) {
+      console.error("failed to refresh access signing keys, falling back to cached key", refreshError);
+      return cachedKey;
+    }
+
+    throw refreshError;
   }
 
   if (cache.expiresAt > now) {
