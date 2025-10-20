@@ -11,6 +11,7 @@
   "kv_namespaces": [
     {
       // Production KV namespace for cached API responses.
+      // This value must point at the existing namespace; deployments fail if replaced with a placeholder.
       "binding": "KV_CACHE",
       "id": "578fc33519014f418bd9712c61f593db"
     }
@@ -18,6 +19,7 @@
   "d1_databases": [
     {
       // Production D1 database backing the worker API.
+      // The database identifier is fixed in Cloudflare; do not replace it during config templating.
       "binding": "DB",
       "database_name": "goldshore_db",
       "database_id": "33b71eca-4987-4a0c-8721-c1c777b8b6a3"
