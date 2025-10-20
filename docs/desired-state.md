@@ -39,8 +39,10 @@ All legacy A/AAAA records (`100.2.111.41`, etc.) and circular CNAMES must be del
 
 ### Login methods
 
-- **Enabled**: OIDC `https://goldshore.cloudflareaccess.com/cdn-cgi/access/sso/oidc/07665be501c60fa585bd8c697d77ebf86ce14f993fa7745ab52f54ad93f523fc`
-- **Disabled**: One-time PIN, GitHub, Google, Facebook, service auth that is unused
+- **Enabled**:
+  - OIDC `https://goldshore.cloudflareaccess.com/cdn-cgi/access/sso/oidc/07665be501c60fa585bd8c697d77ebf86ce14f993fa7745ab52f54ad93f523fc`
+  - GitHub (org membership gated; used for engineering break-glass)
+- **Disabled**: One-time PIN, Google, Facebook, unused service tokens
 
 ### Applications
 
@@ -53,12 +55,15 @@ All legacy A/AAAA records (`100.2.111.41`, etc.) and circular CNAMES must be del
    - Appearance: tags `Gold Shore`, `Web`, `Prod`; logo `https://goldshore-web.pages.dev/images/penrose_logo.svg`
    - Identity failure redirect: `https://goldshore-web.pages.dev/access-denied`
 
-2. **Gold Shore API (Prod)**
-   - Domains: `https://api.goldshore.org/*`
-   - Policies: same allow list → deny-all
-   - Session duration: 12 hours
-   - Appearance: tags `Gold Shore`, `API`, `Prod`; same logo
-   - Optional: Service Token policy for CI using named tokens (`goldshore-api-ci`)
+2. **Gold Shore Admin (Prod/Staging)**
+   - Domains: `https://goldshore-admin.goldshore.workers.dev/*`, `https://api.goldshore.org/*`
+   - Policies (order matters):
+     1. Allow: email glob `*@goldshore.org`
+     2. Allow: GitHub login (Gold Shore Labs org members)
+     3. Default deny
+   - Session duration: 24 hours
+   - Appearance: tags `Gold Shore`, `Admin`, `Prod`; logo `https://goldshore-web.pages.dev/images/penrose_logo.svg`
+   - Inject header: `Cf-Access-Authenticated-User-Email`
 
 ## GitHub hygiene
 
@@ -69,7 +74,7 @@ All legacy A/AAAA records (`100.2.111.41`, etc.) and circular CNAMES must be del
 
 ## Security + Observability
 
-- Access session duration: Web = 24h, API = 12h
+- Access session duration: Web = 24h, Admin/API = 24h
 - Logs: monitor via Cloudflare Zero Trust → Access → Logs; export to SIEM weekly
 - Alerting: pending integration with PagerDuty (stub for future work)
 

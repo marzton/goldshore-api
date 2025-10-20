@@ -10,7 +10,8 @@ receive the same result without duplicating resources.
 | --- | --- | --- |
 | Cloudflare Worker `goldshore-api` | Serves API routes behind Access | Route `api.goldshore.org/*`, workers.dev enabled for smoke tests |
 | Cloudflare Pages `goldshore-web` | Marketing + access-denied static assets | Custom domains `goldshore.org`, `www.goldshore.org`, `web.goldshore.org` |
-| Cloudflare Access | Enforces SSO before any request touches Pages or the API | Only the Gold Shore Labs OIDC provider is enabled; allow Gold Shore staff, deny all else |
+| Cloudflare Pages `goldshore-admin` | Astro-based admin console derived from Cloudflare's SaaS template | Protect behind Access; staging at `goldshore-admin.goldshore.workers.dev`, prod via `/admin` once cut over |
+| Cloudflare Access | Enforces SSO before any request touches Pages or the API | Unified `goldshore-admin` Access app covering staging + `api.goldshore.org`, requires Gold Shore email or GitHub login |
 | DNS (zone `goldshore.org`) | Routes traffic through Cloudflare with flattening | Apex + subdomains CNAME to Cloudflare-managed targets (see [Desired State](docs/desired-state.md)) |
 
 ## Local development
@@ -47,6 +48,24 @@ commands against `http://127.0.0.1:8787`.
   responsive to rotations.
 - A branded Access denied page lives at `public/access-denied.html`; configure Access → Authentication → Custom Pages to
   redirect identity failures to `https://goldshore-web.pages.dev/access-denied`.
+- The single self-hosted Access application `goldshore-admin` now covers both
+  `https://goldshore-admin.goldshore.workers.dev/*` (staging) and `https://api.goldshore.org/*` (production). Require sign
+  in with either a Gold Shore Labs email address (`*@goldshore.org`) or a GitHub account granted Access.
+
+## Admin console
+
+The Astro-based admin console lives in [`apps/admin`](apps/admin) and mirrors Cloudflare's SaaS Admin Template. Local
+workflow:
+
+```bash
+cd apps/admin
+npm install
+npm run dev
+```
+
+`wrangler.jsonc` in that directory documents the bindings that must exist before deploying to Cloudflare Pages. Build
+artifacts live in `apps/admin/dist/` and should be published through Pages once Access validates staging traffic at
+`goldshore-admin.goldshore.workers.dev`.
 
 ## Files of interest
 
@@ -65,7 +84,8 @@ commands against `http://127.0.0.1:8787`.
    the branded access denied page.
 4. DNS for `goldshore.org`, `www.goldshore.org`, and `web.goldshore.org` resolves to Cloudflare (flattened CNAME →
    `goldshore-web.pages.dev`); `api.goldshore.org` resolves to `goldshore-api.gslabs.workers.dev`.
-5. Cloudflare Access dashboard shows **only** the OIDC login method enabled and two applications (Web + API) with allow
-   policy for `marstonr6@gmail.com` and `*@goldshore.org`, followed by a deny-all policy.
+5. Cloudflare Access dashboard shows OIDC + GitHub login methods enabled with two applications (Web + Admin). The
+   `goldshore-admin` app should list domains `goldshore-admin.goldshore.workers.dev/*` and `api.goldshore.org/*`, apply the
+   email glob `*@goldshore.org`, allow Gold Shore's GitHub organization, then fall back to deny-all.
 
 Re-running this checklist after each deploy should yield the same answers unless a deliberate change is introduced.
