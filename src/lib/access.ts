@@ -41,6 +41,7 @@ type VerifyParams =
 
 type KeyCache = {
   keys: Map<string, CryptoKey>;
+  jwks: Map<string, AccessJwk>;
   expiresAt: number;
   inflight: Promise<void> | null;
 };
@@ -77,7 +78,7 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 
   let key: CryptoKey | undefined;
   try {
-    key = await getKey(header.kid, config);
+    key = await getKey(header.kid, header.alg, config);
   } catch (error) {
     console.error("failed to load access signing keys", error);
     return false;
@@ -108,21 +109,53 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
   }
 }
 
-async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | undefined> {
+async function getKey(
+  kid: string,
+  alg: string | undefined,
+  config: AccessConfig,
+): Promise<CryptoKey | undefined> {
   const cache = getCache(config.jwksUrl);
+  const normalizedAlg = normalizeAlgorithm(alg);
+  const cacheKey = buildCacheKey(kid, normalizedAlg);
 
-  if (cache.expiresAt > Date.now() && cache.keys.has(kid)) {
-    return cache.keys.get(kid);
+  if (cache.expiresAt > Date.now() && cache.keys.has(cacheKey)) {
+    return cache.keys.get(cacheKey);
   }
 
   await loadJwks(cache, config);
-  return cache.keys.get(kid);
+
+  const cachedKey = cache.keys.get(cacheKey);
+  if (cachedKey) {
+    return cachedKey;
+  }
+
+  const jwk = cache.jwks.get(kid);
+  if (!jwk) {
+    return undefined;
+  }
+
+  const algorithm = getImportAlgorithm(jwk, normalizedAlg ?? jwk.alg);
+  if (!algorithm) {
+    return undefined;
+  }
+
+  try {
+    const cryptoKey = await crypto.subtle.importKey("jwk", jwk, algorithm, false, ["verify"]);
+    cache.keys.set(cacheKey, cryptoKey);
+    if (cache.expiresAt <= Date.now()) {
+      cache.expiresAt = Date.now() + JWKS_CACHE_TTL_MS;
+    }
+    return cryptoKey;
+  } catch (error) {
+    console.error("failed to import jwk", jwk.kid, error);
+    return undefined;
+  }
 }
 
 function getCache(url: string): KeyCache {
   let cache = keyCaches.get(url);
   if (!cache) {
-    cache = { keys: new Map(), expiresAt: 0, inflight: null };
+    cache = { keys: new Map(), jwks: new Map(), expiresAt: 0, inflight: null };
     keyCaches.set(url, cache);
   }
   return cache;
@@ -147,22 +180,27 @@ async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
       const body = await res.json<{ keys?: JsonWebKey[] }>();
       const keys = (body.keys ?? []) as AccessJwk[];
       const imported = new Map<string, CryptoKey>();
+      const jwks = new Map<string, AccessJwk>();
 
       await Promise.all(
         keys.map(async (jwk) => {
           if (!jwk.kid) return;
 
-          const algorithm = getImportAlgorithm(jwk);
+          jwks.set(jwk.kid, jwk);
+          const normalizedAlg = normalizeAlgorithm(jwk.alg);
+          const algorithm = getImportAlgorithm(jwk, normalizedAlg ?? jwk.alg);
           if (!algorithm) return;
 
           try {
             const cryptoKey = await crypto.subtle.importKey("jwk", jwk, algorithm, false, ["verify"]);
-            imported.set(jwk.kid, cryptoKey);
+            imported.set(buildCacheKey(jwk.kid, normalizedAlg), cryptoKey);
           } catch (error) {
             console.error("failed to import jwk", jwk.kid, error);
           }
         }),
       );
+
+      cache.jwks = jwks;
 
       if (imported.size > 0) {
         cache.keys = imported;
@@ -191,9 +229,14 @@ function resolveConfig(env?: AccessEnvironment): AccessConfig {
   return { audience, issuer, jwksUrl };
 }
 
-function getImportAlgorithm(jwk: AccessJwk): SupportedImportParams | null {
+function getImportAlgorithm(jwk: AccessJwk, algorithmHint?: string | null): SupportedImportParams | null {
   if (jwk.kty === "RSA") {
-    return { name: "RSASSA-PKCS1-v1_5", hash: { name: "SHA-256" } };
+    const hashName = rsaHash(algorithmHint ?? jwk.alg);
+    if (!hashName) {
+      return null;
+    }
+
+    return { name: "RSASSA-PKCS1-v1_5", hash: { name: hashName } };
   }
 
   if (jwk.kty === "EC" && typeof jwk.crv === "string") {
@@ -358,6 +401,38 @@ function curveHash(curve: EcNamedCurve | undefined): HashName {
     default:
       return "SHA-256";
   }
+}
+
+function normalizeAlgorithm(alg: string | undefined): string | undefined {
+  if (typeof alg !== "string") {
+    return undefined;
+  }
+
+  const normalized = alg.trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  return normalized.toUpperCase();
+}
+
+function buildCacheKey(kid: string, alg?: string): string {
+  return `${kid}:${alg ?? ""}`;
+}
+
+const RSA_HASH_BY_ALG: Record<string, HashName> = {
+  RS256: "SHA-256",
+  RS384: "SHA-384",
+  RS512: "SHA-512",
+};
+
+function rsaHash(alg?: string | null): HashName | null {
+  if (typeof alg !== "string" || alg.length === 0) {
+    return "SHA-256";
+  }
+
+  const normalized = alg.toUpperCase();
+  return RSA_HASH_BY_ALG[normalized as keyof typeof RSA_HASH_BY_ALG] ?? null;
 }
 
 function normalizeIssuer(value: string): string {
