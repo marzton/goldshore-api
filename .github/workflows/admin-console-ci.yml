@@ -1,0 +1,37 @@
+name: Admin Console CI
+
+on:
+  push:
+    paths:
+      - 'apps/admin/**'
+      - 'drizzle/admin/**'
+      - '.github/workflows/admin-console-ci.yml'
+  pull_request:
+    paths:
+      - 'apps/admin/**'
+      - 'drizzle/admin/**'
+      - '.github/workflows/admin-console-ci.yml'
+
+jobs:
+  build:
+    name: Build admin console
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/admin
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: apps/admin/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Astro build
+        run: npm run build

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/master/packages/wrangler/config-schema.json",
+  "name": "goldshore-admin",
+  "compatibility_date": "2024-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "kv_namespaces": [
+    {
+      "binding": "SESSION",
+      "id": "00000000000000000000000000000000"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "goldshore-admin",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "workflows": [
+    {
+      "name": "goldshore-admin-customer-workflow",
+      "binding": "CUSTOMER_WORKFLOW",
+      "class_name": "CustomerWorkflow"
+    }
+  ],
+  "vars": {
+    "API_TOKEN": ""
+  },
+  "migrations_dir": "../../drizzle/admin"
+}
