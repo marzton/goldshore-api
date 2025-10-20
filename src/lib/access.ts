@@ -43,6 +43,7 @@ type KeyCache = {
   keys: Map<string, CryptoKey>;
   expiresAt: number;
   inflight: Promise<void> | null;
+  missing: Map<string, number>;
 };
 
 const ALLOWED_ALGORITHMS = new Set(["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]);
@@ -111,25 +112,48 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | undefined> {
   const cache = getCache(config.jwksUrl);
 
-  if (cache.expiresAt > Date.now() && cache.keys.has(kid)) {
-    return cache.keys.get(kid);
+  const now = Date.now();
+  const cacheValid = cache.expiresAt > now;
+  const cachedKey = cache.keys.get(kid);
+  if (cacheValid && cachedKey) {
+    return cachedKey;
   }
 
-  await loadJwks(cache, config);
-  return cache.keys.get(kid);
+  let forceRefresh = !cacheValid;
+  if (!forceRefresh) {
+    const nextAllowedRefresh = cache.missing.get(kid) ?? 0;
+    forceRefresh = now >= nextAllowedRefresh;
+  }
+
+  await loadJwks(cache, config, forceRefresh);
+
+  const refreshedKey = cache.keys.get(kid);
+  if (refreshedKey) {
+    cache.missing.delete(kid);
+    return refreshedKey;
+  }
+
+  if (cache.expiresAt > now) {
+    const nextAttempt = cache.expiresAt || now + JWKS_CACHE_TTL_MS;
+    cache.missing.set(kid, nextAttempt);
+  } else {
+    cache.missing.delete(kid);
+  }
+
+  return undefined;
 }
 
 function getCache(url: string): KeyCache {
   let cache = keyCaches.get(url);
   if (!cache) {
-    cache = { keys: new Map(), expiresAt: 0, inflight: null };
+    cache = { keys: new Map(), expiresAt: 0, inflight: null, missing: new Map() };
     keyCaches.set(url, cache);
   }
   return cache;
 }
 
-async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
-  if (cache.expiresAt > Date.now() && cache.keys.size > 0) {
+async function loadJwks(cache: KeyCache, config: AccessConfig, force = false): Promise<void> {
+  if (!force && cache.expiresAt > Date.now() && cache.keys.size > 0) {
     return;
   }
 
@@ -167,6 +191,7 @@ async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
       if (imported.size > 0) {
         cache.keys = imported;
         cache.expiresAt = Date.now() + JWKS_CACHE_TTL_MS;
+        cache.missing.clear();
       } else if (cache.keys.size === 0) {
         cache.expiresAt = 0;
       }
