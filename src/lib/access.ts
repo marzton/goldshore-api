@@ -80,13 +80,29 @@ export async function requireAccess(req: Request): Promise<boolean> {
   }
 
   try {
-    const formattedSignature =
-      verifyParams.name === "ECDSA" ? joseToDer(signature) : signature;
+    const formattedSignature = formatSignature(signature, verifyParams);
+    if (!formattedSignature) {
+      console.error("unsupported signature format");
+      return false;
+    }
+
     return await crypto.subtle.verify(verifyParams, key, formattedSignature, data);
   } catch (error) {
     console.error("access token verification failed", error);
     return false;
   }
+}
+
+function formatSignature(signature: Uint8Array, verifyParams: VerifyParams): Uint8Array | null {
+  if (verifyParams.name !== "ECDSA") {
+    return signature;
+  }
+
+  if (signature.length === 0 || signature.length % 2 !== 0) {
+    return null;
+  }
+
+  return joseToDer(signature);
 }
 
 async function getKey(kid: string): Promise<CryptoKey | undefined> {
