@@ -48,9 +48,6 @@ export function corsHeaders(env: Env, req: Request): HeadersInit {
   if (allowedOrigin) {
     headers["Access-Control-Allow-Origin"] = allowedOrigin;
     if (allowedOrigin === "*") delete headers.Vary;
-  } else if (!allowed.length) {
-    headers["Access-Control-Allow-Origin"] = "*";
-    delete headers.Vary;
   }
   return headers;
 }

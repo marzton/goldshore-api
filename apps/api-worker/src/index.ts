@@ -41,16 +41,5 @@ app.post('/trade', async (c) => {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
-  const { symbol, side, qty } = (await c.req.json()) as TradeRequest;
-
-  return c.json({
-    ok: true,
-    data: {
-      symbol,
-      side,
-      qty
-    }
-  });
+  return c.json({ status: 'ok' });
 });
-
-export default app;
