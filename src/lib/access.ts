@@ -88,6 +88,18 @@ export async function requireAccess(req: Request): Promise<boolean> {
   const data = encoder.encode(`${parts[0]}.${parts[1]}`);
   const verifyParams = getVerifyParams(algorithmDetails);
 
+  let signature: Uint8Array;
+  try {
+    const rawSignature = base64UrlToUint8Array(parts[2]);
+    signature =
+      verifyParams.name === "ECDSA"
+        ? joseToDerSignature(rawSignature)
+        : rawSignature;
+  } catch (error) {
+    console.error("failed to normalize ecdsa signature", error);
+    return false;
+  }
+
   try {
     const rawSignature = base64UrlToUint8Array(parts[2]);
     const signature =
