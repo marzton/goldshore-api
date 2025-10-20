@@ -41,6 +41,7 @@ type VerifyParams =
 
 type KeyCache = {
   keys: Map<string, CryptoKey>;
+  jwks: Map<string, AccessJwk>;
   expiresAt: number;
   inflight: Promise<void> | null;
 };
@@ -126,23 +127,41 @@ async function getKey(kid: string, alg: string, config: AccessConfig): Promise<C
   }
 
   if (!isRsa) {
-    return cache.keys.get(kid);
+    return undefined;
   }
 
-  return undefined;
+  const hashName = RSA_HASH_BY_ALG.get(alg);
+  const jwk = hashName ? cache.jwks.get(kid) : undefined;
+  if (!hashName || !jwk) {
+    return undefined;
+  }
+
+  const algorithm = getImportAlgorithm(jwk, hashName);
+  if (!algorithm) {
+    return undefined;
+  }
+
+  try {
+    const cryptoKey = await crypto.subtle.importKey("jwk", jwk, algorithm, false, ["verify"]);
+    cache.keys.set(cacheKey, cryptoKey);
+    return cryptoKey;
+  } catch (error) {
+    console.error("failed to import jwk", `${kid}:${alg}`, error);
+    return undefined;
+  }
 }
 
 function getCache(url: string): KeyCache {
   let cache = keyCaches.get(url);
   if (!cache) {
-    cache = { keys: new Map(), expiresAt: 0, inflight: null };
+    cache = { keys: new Map(), jwks: new Map(), expiresAt: 0, inflight: null };
     keyCaches.set(url, cache);
   }
   return cache;
 }
 
 async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
-  if (cache.expiresAt > Date.now() && cache.keys.size > 0) {
+  if (cache.expiresAt > Date.now() && (cache.keys.size > 0 || cache.jwks.size > 0)) {
     return;
   }
 
@@ -160,10 +179,13 @@ async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
       const body = await res.json<{ keys?: JsonWebKey[] }>();
       const keys = (body.keys ?? []) as AccessJwk[];
       const imported = new Map<string, CryptoKey>();
+      const jwksByKid = new Map<string, AccessJwk>();
 
       await Promise.all(
         keys.map(async (jwk) => {
           if (!jwk.kid) return;
+
+          jwksByKid.set(jwk.kid, jwk);
 
           if (jwk.kty === "RSA") {
             const rsaAlgorithms = getRsaAlgorithmsToImport(jwk);
@@ -197,8 +219,10 @@ async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
         }),
       );
 
-      if (imported.size > 0) {
-        cache.keys = imported;
+      cache.keys = imported;
+      cache.jwks = jwksByKid;
+
+      if (jwksByKid.size > 0) {
         cache.expiresAt = Date.now() + JWKS_CACHE_TTL_MS;
       } else if (cache.keys.size === 0) {
         cache.expiresAt = 0;
