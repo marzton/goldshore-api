@@ -166,8 +166,9 @@ async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
           if (!jwk.kid) return;
 
           if (jwk.kty === "RSA") {
+            const rsaAlgorithms = getRsaAlgorithmsToImport(jwk);
             await Promise.all(
-              [...RSA_HASH_BY_ALG.entries()].map(async ([alg, hashName]) => {
+              rsaAlgorithms.map(async ([alg, hashName]) => {
                 if (!ALLOWED_ALGORITHMS.has(alg)) return;
 
                 const algorithm = getImportAlgorithm(jwk, hashName);
@@ -228,6 +229,18 @@ function getCacheKey(kid: string, alg?: string): string {
     return `${kid}:${alg}`;
   }
   return kid;
+}
+
+function getRsaAlgorithmsToImport(jwk: AccessJwk): Array<[string, HashName]> {
+  if (typeof jwk.alg === "string") {
+    const hashName = RSA_HASH_BY_ALG.get(jwk.alg);
+    if (!hashName) {
+      return [];
+    }
+    return [[jwk.alg, hashName]];
+  }
+
+  return Array.from(RSA_HASH_BY_ALG.entries());
 }
 
 function getImportAlgorithm(jwk: AccessJwk, hashName?: HashName): SupportedImportParams | null {
