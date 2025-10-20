@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 
 type Bindings = {
   ALPACA_KEY: string;
@@ -14,7 +15,19 @@ type TradeRequest = {
 
 const app = new Hono<{ Bindings: Bindings }>();
 
+app.use(
+  '*',
+  cors({
+    origin: '*',
+    allowHeaders: ['Content-Type', 'Authorization'],
+    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    maxAge: 86400
+  })
+);
+
 app.get('/health', (c) => c.text('ok'));
+
+app.options('/trade', (c) => new Response(null, { status: 204 }));
 
 app.post('/trade', async (c) => {
   const sharedSecret = c.env.TRADE_API_TOKEN;
