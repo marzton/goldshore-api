@@ -1,73 +1,43 @@
-import { corsHeaders } from "./lib/cors";
-import { ok, unauthorized, notFound, serverError } from "./lib/util";
-import { requireAccess } from "./lib/access";
-import type { Env } from "./types";
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 
-import { getQuote, getOHLC } from "./handlers/market";
-import { getOrders, createOrder } from "./handlers/broker";
-import { headlines } from "./handlers/news";
-import { listFilings } from "./handlers/edgar";
-import { ytSearch } from "./handlers/youtube";
-import { generateReport, getReport } from "./handlers/reports";
-import { postBacktest, getBacktest } from "./handlers/backtests";
+type Bindings = {
+  ALPACA_KEY: string;
+  ALPACA_SECRET: string;
+  TRADE_API_TOKEN?: string;
+};
 
-export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
-    const url = new URL(req.url);
-    const cors = corsHeaders(env, req);
+type TradeRequest = {
+  symbol: string;
+  side: 'buy' | 'sell';
+  qty: number;
+};
 
-    if (req.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: cors });
-    }
+const app = new Hono<{ Bindings: Bindings }>();
 
-    if (url.pathname === "/health") {
-      return ok({ ok: true, service: "goldshore-api", time: new Date().toISOString() }, cors);
-    }
+app.use(
+  '*',
+  cors({
+    origin: '*',
+    allowHeaders: ['Content-Type', 'Authorization'],
+    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    maxAge: 86400
+  })
+);
 
-    if (url.pathname.startsWith("/v1/")) {
-      if (!(await requireAccess(req))) {
-        return unauthorized(cors);
-      }
+app.get('/health', (c) => c.text('ok'));
 
-      try {
-        if (url.pathname === "/v1/whoami") {
-          const email = req.headers.get("CF-Access-Authenticated-User-Email") || null;
-          return ok({ ok: true, email }, cors);
-        }
+app.options('/trade', (c) => new Response(null, { status: 204 }));
 
-        if (url.pathname === "/v1/market/quote") return getQuote(env, url, cors);
-        if (url.pathname === "/v1/market/ohlc") return getOHLC(env, url, cors);
+app.post('/trade', async (c) => {
+  const sharedSecret = c.env.TRADE_API_TOKEN;
+  const authHeader = c.req.header('authorization');
 
-        if (url.pathname === "/v1/broker/orders" && req.method === "GET") return getOrders(env, url, cors);
-        if (url.pathname === "/v1/broker/orders" && req.method === "POST") return createOrder(env, req, cors);
+  if (!sharedSecret) {
+    return c.json({ error: 'Trading is not configured on this deployment.' }, 503);
+  }
 
-        if (url.pathname === "/v1/news/headlines") return headlines(env, url, cors);
-        if (url.pathname === "/v1/edgar/filings") return listFilings(env, url, cors);
-
-        if (url.pathname === "/v1/youtube/search") return ytSearch(env, url, cors);
-
-        if (url.pathname === "/v1/reports/generate" && req.method === "POST") return generateReport(env, req, cors);
-        if (url.pathname.startsWith("/v1/reports/") && req.method === "GET") {
-          const id = url.pathname.split("/").pop();
-          if (id) {
-            return getReport(env, id, cors);
-          }
-        }
-
-        if (url.pathname === "/v1/backtests/run" && req.method === "POST") return postBacktest(env, req, cors);
-        if (url.pathname.startsWith("/v1/backtests/") && req.method === "GET") {
-          const id = url.pathname.split("/").pop();
-          if (id) {
-            return getBacktest(env, id, cors);
-          }
-        }
-      } catch (error) {
-        return serverError(error, cors);
-      }
-
-      return notFound(cors);
-    }
-
-    return notFound(cors);
+  if (!authHeader || authHeader !== `Bearer ${sharedSecret}`) {
+    return c.json({ error: 'Unauthorized' }, 401);
   }
 };
