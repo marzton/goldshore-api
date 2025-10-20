@@ -88,21 +88,21 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
   const encoder = new TextEncoder();
   const data = encoder.encode(`${parts[0]}.${parts[1]}`);
 
-  let signature: Uint8Array;
-  try {
-    signature = base64UrlToUint8Array(parts[2]);
-  } catch (error) {
-    console.error("invalid access token signature", error);
-    return false;
-  }
-
   const verifyParams = getVerifyParams(key);
   if (!verifyParams) {
     console.error("unsupported key algorithm", key.algorithm);
     return false;
   }
 
-  const normalizedSignature = normalizeSignature(signature, key, verifyParams);
+  let normalizedSignature: Uint8Array | null;
+  try {
+    const signature = base64UrlToUint8Array(parts[2]);
+    normalizedSignature = normalizeSignature(signature, key, verifyParams);
+  } catch (error) {
+    console.error("invalid access token signature", error);
+    return false;
+  }
+
   if (!normalizedSignature) {
     return false;
   }
