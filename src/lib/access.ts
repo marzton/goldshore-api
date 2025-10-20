@@ -253,11 +253,13 @@ function convertJoseSignatureToDer(signature: Uint8Array): Uint8Array {
   }
 
   const derLength = 2 + r.length + 2 + s.length;
-  const der = new Uint8Array(2 + derLength);
+  const lengthBytes = encodeDerLength(derLength);
+  const der = new Uint8Array(1 + lengthBytes.length + derLength);
   let offset = 0;
 
   der[offset++] = 0x30;
-  der[offset++] = derLength;
+  der.set(lengthBytes, offset);
+  offset += lengthBytes.length;
   der[offset++] = 0x02;
   der[offset++] = r.length;
   der.set(r, offset);
@@ -267,6 +269,22 @@ function convertJoseSignatureToDer(signature: Uint8Array): Uint8Array {
   der.set(s, offset);
 
   return der;
+}
+
+function encodeDerLength(length: number): Uint8Array {
+  if (length < 0x80) {
+    return Uint8Array.of(length);
+  }
+
+  const bytes: number[] = [];
+  let remaining = length;
+
+  while (remaining > 0) {
+    bytes.unshift(remaining & 0xff);
+    remaining >>= 8;
+  }
+
+  return Uint8Array.of(0x80 | bytes.length, ...bytes);
 }
 
 function trimLeadingZeros(bytes: Uint8Array): Uint8Array {
