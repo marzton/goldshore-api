@@ -1,90 +1,71 @@
-# GoldShore API Repository
+# Gold Shore Labs · API + Access Infrastructure
 
-Monorepo for:
-- **Admin UI** (Cloudflare Pages)
-- **API Worker** (Cloudflare Workers, name: `GoldShore`)
-- **Marketing Web** (Astro static site in `apps/web`)
-- Shared packages (`packages/ui`, `packages/utils`)
+This repository defines the hardened baseline for the `goldshore-api` Cloudflare Worker and the supporting
+Cloudflare Access configuration. Every change is built to be **idempotent**: you can apply the same automation twice and
+receive the same result without duplicating resources.
 
-## Quick start
+## Components
+
+| Component | Purpose | Desired State |
+| --- | --- | --- |
+| Cloudflare Worker `goldshore-api` | Serves API routes behind Access | Route `api.goldshore.org/*`, workers.dev enabled for smoke tests |
+| Cloudflare Pages `goldshore-web` | Marketing + access-denied static assets | Custom domains `goldshore.org`, `www.goldshore.org`, `web.goldshore.org` |
+| Cloudflare Access | Enforces SSO before any request touches Pages or the API | Only the Gold Shore Labs OIDC provider is enabled; allow Gold Shore staff, deny all else |
+| DNS (zone `goldshore.org`) | Routes traffic through Cloudflare with flattening | Apex + subdomains CNAME to Cloudflare-managed targets (see [Desired State](docs/desired-state.md)) |
+
+## Local development
 
 ```bash
-# choose one package manager; pnpm recommended
-corepack enable
-pnpm i
-pnpm -w ./apps/admin dev
-
-# marketing site lives in apps/web
-cd apps/web
 npm install
-npm run dev
+npm run build
+npm run dev # runs wrangler dev with workers_dev enabled
 ```
 
-The dev server listens on `http://127.0.0.1:8787`. Provide `CF-Access-*` headers when exercising `/v1/*` routes locally.
+Set the following environment variables when running locally so the worker can validate Cloudflare Access assertions:
 
-## Deploy
+- `ACCESS_ISSUER`
+- `ACCESS_JWKS_URL`
+- `CORS_ORIGINS`
 
-* API → Cloudflare Worker via `.github/workflows/deploy-worker.yml`
+Wrangler automatically reads these values from `wrangler.toml` in development. To impersonate an Access user locally you
+can copy the `Cf-Access-Jwt-Assertion` header from a production request and attach it with `--header` when issuing curl
+commands against `http://127.0.0.1:8787`.
 
-Required repository secrets (Settings → Secrets and variables → Actions):
+## Deployment workflow
 
-* `CLOUDFLARE_ACCOUNT_ID`
-* `CLOUDFLARE_API_TOKEN`
-* `ALPACA_KEY` (paper)
-* `ALPACA_SECRET` (paper)
-* `OPENAI_API_KEY` (if used later)
+1. Ensure GitHub secrets `CF_ACCOUNT_ID` and `CF_API_TOKEN` are present (token scope: `Workers KV Storage:Edit`,
+   `Workers Routes:Edit`, `Workers Scripts:Edit`, `Pages:Edit`, `Account Settings:Read`).
+2. `npm run deploy` → runs `wrangler deploy` using the deterministic configuration in `wrangler.toml`.
+3. Visit the Cloudflare dashboard once to confirm the route `api.goldshore.org/*` is attached and proxied.
+4. If a re-run of the pipeline finds no drift, the deploy should become a NOOP.
 
-## Environment snapshot
+## Access enforcement
 
-| Component | Status | Notes |
-| --- | --- | --- |
-| GitHub org `goldshore` | ✅ created, repos `goldshore-web` and `goldshore-api` | `goldshore-web` is archived; deployments run only from this repo. |
-| GoldShore Deployer (App ID 2099597) | ✅ owned by org, permissions correct, webhook points to `api.goldshore.org/webhook/github` | |
-| Secrets | ✅ stored without `GITHUB_` prefixes | |
-| DNS | ❌ old records still pointing at wrong places | Reset to worker-only targets per checklist below. |
-| Worker | ⏳ not deployed yet | Use the deploy workflow once DNS is correct. |
+- Worker routes must include the header `Cf-Access-Jwt-Assertion` which is verified against the JWKS published by
+  Cloudflare Access (`ACCESS_JWKS_URL`).
+- The helper in `src/lib/access.ts` caches JWKS responses for five minutes to respect rate limits while staying
+  responsive to rotations.
+- A branded Access denied page lives at `public/access-denied.html`; configure Access → Authentication → Custom Pages to
+  redirect identity failures to `https://goldshore-web.pages.dev/access-denied`.
 
-## Phase 1 deployment: DNS reset and verification
+## Files of interest
 
-Only the API worker should be reachable during this phase. The checklist below replaces the previous Pages + Worker dual setup.
+- [`wrangler.toml`](wrangler.toml) — deterministic worker configuration (routes, vars, compatibility date).
+- [`src/index.ts`](src/index.ts) — entry point implementing CORS, `/health`, and `/v1/whoami` with Access enforcement.
+- [`src/lib/access.ts`](src/lib/access.ts) — Access JWT validation against Gold Shore Labs' JWKS.
+- [`public/access-denied.html`](public/access-denied.html) — Cloudflare Access identity failure landing page.
+- [`docs/desired-state.md`](docs/desired-state.md) — compliance summary of DNS, Access, and worker configuration.
+- [`docs/cloudflare-changelog.md`](docs/cloudflare-changelog.md) — before/after ledger for any Cloudflare change.
 
-### Agent issue template
+## Validation checklist
 
-- **Repository:** `goldshore-api`
-- **Issue title:** `DNS reset and domain verification (Phase 1 Deployment)`
+1. `curl https://api.goldshore.org/health` returns `{ "ok": true }` with CORS headers allowing your origin.
+2. `curl https://api.goldshore.org/v1/whoami` with a valid Access JWT returns the authenticated subject/email.
+3. Navigate to any protected domain without being logged in → redirected to Cloudflare Access → failing sign-in ends on
+   the branded access denied page.
+4. DNS for `goldshore.org`, `www.goldshore.org`, and `web.goldshore.org` resolves to Cloudflare (flattened CNAME →
+   `goldshore-web.pages.dev`); `api.goldshore.org` resolves to `goldshore-api.gslabs.workers.dev`.
+5. Cloudflare Access dashboard shows **only** the OIDC login method enabled and two applications (Web + API) with allow
+   policy for `marstonr6@gmail.com` and `*@goldshore.org`, followed by a deny-all policy.
 
-#### Summary
-
-Fix all DNS mis-points and verify that the Worker environment resolves before proceeding with app or pipeline work.
-
-#### Step-by-step execution
-
-1. **Export backup of existing DNS zone**
-   - Cloudflare → goldshore.org → DNS → Advanced → Export zone file (save copy).
-2. **Clean base DNS**
-
-   | Type | Name | Target | Proxy | Purpose |
-   | --- | --- | --- | --- | --- |
-   | CNAME | `api` | `workers.dev` | **Proxied** | Worker endpoint placeholder |
-   | MX / TXT | keep existing | | | email |
-
-   - Remove A/AAAA/CNAME records that point to unused Pages or staging hosts.
-3. **Verify propagation**
-   - `nslookup api.goldshore.org` → should return Cloudflare IPs.
-   - Wait until the DNS tab shows green checks for the records above.
-4. **Attach domain to Worker**
-   - Worker → service `GoldShore` → Triggers → Add Route `api.goldshore.org/*`.
-5. **Verify SSL/TLS**
-   - Cloudflare → SSL/TLS → mode = **Full (strict)**.
-6. **Confirm reachability**
-   - `https://api.goldshore.org/health` → returns `ok` (once Worker live).
-7. **Post DNS summary**
-   - Include Cloudflare DNS table (redact MX/TXT if sensitive).
-   - Confirm domain verification success for the Worker route.
-
-### Next steps after DNS
-
-1. Deploy the Worker via workflow `deploy-worker.yml` in this repository.
-2. Verify GitHub App webhooks: App → Recent Deliveries → expect 200 from `/webhook/github`.
-
-> **TL;DR for the agent:** Normalize the goldshore.org DNS so only the API worker is routed, ensure SSL is set to Full (strict), then use the Worker deploy workflow once verification is complete.
+Re-running this checklist after each deploy should yield the same answers unless a deliberate change is introduced.
