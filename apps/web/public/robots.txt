@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Sitemap: https://goldshore.org/sitemap.xml
+Host: goldshore.org
+
+# Disallow admin if gated later by Access
+# Disallow: /admin

@@ -1,0 +1,18 @@
+---
+export interface Props {
+  id?: string;
+  label?: string;
+}
+const { id = 'slot-1', label = 'Sponsor' } = Astro.props;
+---
+<aside class="card" aria-label={`Ad ${label}`}>
+  <div class="muted" style="font-size:.75rem;letter-spacing:.08em;text-transform:uppercase">{label}</div>
+  <div style="padding:.5rem 0">Your promotion here.</div>
+  <a class="btn" href="/contact">Contact us</a>
+</aside>
+
+<style>
+  .card{border:1px solid #222;border-radius:12px;padding:1rem;background:#0f0f0f}
+  .btn{background:var(--gs-accent);color:#000;border:none;border-radius:8px;padding:.4rem .8rem;font-weight:600;cursor:pointer}
+  .muted{color:var(--gs-muted)}
+</style>
