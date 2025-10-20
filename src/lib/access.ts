@@ -45,30 +45,131 @@ type CachedKey =
   | { type: "RSA"; keys: Map<HashName, CryptoKey> }
   | { type: "EC"; key: CryptoKey };
 
-type KeyCache = {
   keys: Map<string, CachedKey>;
-  expiresAt: number;
-  inflight: Promise<void> | null;
-  missing: Map<string, number>;
-};
 
-const ALLOWED_ALGORITHMS = new Set(["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]);
-const keyCaches = new Map<string, KeyCache>();
+  if (!header?.kid) {
+    return false;
+  }
 
-export async function requireAccess(req: Request, env?: AccessEnvironment): Promise<boolean> {
-  const jwt = req.headers.get("CF-Access-Jwt-Assertion");
-  if (!jwt) return false;
+  const algorithm = normalizeAlgorithm(header.alg);
+  if (!algorithm) {
+    key = await getKey(header.kid, algorithm, config);
+async function getKey(
+  kid: string,
+  algorithm: AccessAlgorithm,
+  config: AccessConfig,
+): Promise<CryptoKey | undefined> {
 
-  const config = resolveConfig(env);
-  const parts = jwt.split(".");
-  if (parts.length !== 3) return false;
+    const selected = selectKey(cachedKey, algorithm);
+    if (selected) {
+      return selected;
+    }
+    const selected = selectKey(refreshedKey, algorithm);
+    if (selected) {
+      return selected;
+    }
+      const imported = new Map<string, CachedKey>();
+          const importedKey = await importJwk(jwk);
+          if (importedKey) {
+            imported.set(jwk.kid, importedKey);
+function normalizeAlgorithm(alg?: string | null): AccessAlgorithm | null {
+  if (!alg || !ALLOWED_ALGORITHMS.has(alg)) {
+    return null;
+  }
+  return alg as AccessAlgorithm;
+function selectKey(cached: CachedKey, algorithm: AccessAlgorithm): CryptoKey | null {
+  if (cached.type === "EC") {
+    return algorithm.startsWith("ES") ? cached.key : null;
+  if (!algorithm.startsWith("RS")) {
+    return null;
+  }
 
-  let header: AccessHeader;
-  let payload: AccessPayload;
+  const hash = algorithmHash(algorithm);
+  if (!hash) {
+    return null;
+  }
+
+  return cached.keys.get(hash) ?? null;
+}
+
+async function importJwk(jwk: AccessJwk): Promise<CachedKey | null> {
+  if (jwk.kty === "RSA") {
+    const hashes = rsaHashesFromJwk(jwk);
+    const entries = await Promise.all(
+      hashes.map(async (hash) => {
+        try {
+          const algorithm: SupportedImportParams = { name: "RSASSA-PKCS1-v1_5", hash: { name: hash } };
+          const cryptoKey = await crypto.subtle.importKey("jwk", jwk, algorithm, false, ["verify"]);
+          return { hash, key: cryptoKey };
+        } catch (error) {
+          console.error("failed to import jwk", jwk.kid, hash, error);
+          return null;
+        }
+      }),
+    );
+
+    const keys = new Map<HashName, CryptoKey>();
+    for (const entry of entries) {
+      if (entry) {
+        keys.set(entry.hash, entry.key);
+      }
+
+    return keys.size > 0 ? { type: "RSA", keys } : null;
+  const algorithm = importAlgorithmFromCurve(jwk);
+  if (!algorithm) {
+    return null;
+  }
 
   try {
-    header = decodeSection<AccessHeader>(parts[0]);
-    payload = decodeSection<AccessPayload>(parts[1]);
+    const cryptoKey = await crypto.subtle.importKey("jwk", jwk, algorithm, false, ["verify"]);
+    return { type: "EC", key: cryptoKey };
+  } catch (error) {
+    console.error("failed to import jwk", jwk.kid, error);
+    return null;
+  }
+}
+
+function rsaHashesFromJwk(jwk: AccessJwk): HashName[] {
+  const jwkAlg = "alg" in jwk ? (jwk.alg as string | undefined) : undefined;
+  const normalized = normalizeAlgorithm(jwkAlg);
+  if (normalized && normalized.startsWith("RS")) {
+    const hash = algorithmHash(normalized);
+    return hash ? [hash] : ["SHA-256", "SHA-384", "SHA-512"];
+  }
+
+  return ["SHA-256", "SHA-384", "SHA-512"];
+}
+
+function algorithmHash(algorithm: AccessAlgorithm): HashName | null {
+  switch (algorithm) {
+    case "RS256":
+      return "SHA-256";
+    case "RS384":
+      return "SHA-384";
+    case "RS512":
+      return "SHA-512";
+    default:
+      return null;
+  }
+}
+
+function resolveConfig(env?: AccessEnvironment): AccessConfig {
+  const audience = env?.ACCESS_AUDIENCE?.trim() || DEFAULT_ACCESS_AUDIENCE;
+  const issuer = normalizeIssuer(env?.ACCESS_ISSUER || DEFAULT_ACCESS_ISSUER);
+  const jwksUrl = (env?.ACCESS_JWKS_URL && env.ACCESS_JWKS_URL.trim()) || `${issuer}${JWKS_PATH}`;
+
+  return { audience, issuer, jwksUrl };
+function importAlgorithmFromCurve(jwk: AccessJwk): SupportedImportParams | null {
+  if (jwk.kty === "EC" && typeof jwk.crv === "string") {
+    const curve = jwk.crv as EcNamedCurve;
+    if (curve === "P-256" || curve === "P-384" || curve === "P-521") {
+      return { name: "ECDSA", namedCurve: curve };
+    }
+  }
+
+  return null;
+}
+
   } catch (error) {
     console.error("invalid access token payload", error);
     return false;
