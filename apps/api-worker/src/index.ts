@@ -40,4 +40,6 @@ app.post('/trade', async (c) => {
   if (!authHeader || authHeader !== `Bearer ${sharedSecret}`) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
-};
+
+  return c.json({ status: 'ok' });
+});
