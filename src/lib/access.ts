@@ -86,23 +86,13 @@ export async function requireAccess(req: Request): Promise<boolean> {
 
   const encoder = new TextEncoder();
   const data = encoder.encode(`${parts[0]}.${parts[1]}`);
-  const rawSignature = base64UrlToUint8Array(parts[2]);
-  const signature =
-    algorithmDetails.type === "EC" ? joseToDerSignature(rawSignature) : rawSignature;
-  let signature = base64UrlToUint8Array(parts[2]);
-
   const verifyParams = getVerifyParams(algorithmDetails);
 
-  if (verifyParams.name === "ECDSA") {
-    try {
-      signature = joseToDer(signature);
-    } catch (error) {
-      console.error("failed to normalize ecdsa signature", error);
-      return false;
-    }
-  }
-
   try {
+    const rawSignature = base64UrlToUint8Array(parts[2]);
+    const signature =
+      verifyParams.name === "ECDSA" ? joseToDerSignature(rawSignature) : rawSignature;
+
     return await crypto.subtle.verify(verifyParams, key, signature, data);
   } catch (error) {
     console.error("access token verification failed", error);
@@ -372,62 +362,6 @@ function rsaHash(alg: string | undefined): HashName {
     default:
       return "SHA-256";
   }
-}
-
-function joseToDer(signature: Uint8Array): Uint8Array {
-  if (signature.length % 2 !== 0) {
-    throw new Error("invalid ECDSA signature length");
-  }
-
-  const half = signature.length / 2;
-  const r = signature.slice(0, half);
-  const s = signature.slice(half);
-
-  const rDer = derEncodeInteger(r);
-  const sDer = derEncodeInteger(s);
-
-  const sequenceLength = rDer.length + sDer.length;
-  if (sequenceLength > 0x7f) {
-    throw new Error("unsupported ECDSA signature length");
-  }
-
-  const der = new Uint8Array(2 + sequenceLength);
-  der[0] = 0x30;
-  der[1] = sequenceLength;
-  der.set(rDer, 2);
-  der.set(sDer, 2 + rDer.length);
-
-  return der;
-}
-
-function derEncodeInteger(source: Uint8Array): Uint8Array {
-  let firstNonZero = 0;
-  while (firstNonZero < source.length && source[firstNonZero] === 0) {
-    firstNonZero += 1;
-  }
-
-  let value = source.slice(firstNonZero);
-  if (value.length === 0) {
-    value = new Uint8Array([0]);
-  }
-
-  if (value[0] & 0x80) {
-    const extended = new Uint8Array(value.length + 1);
-    extended[0] = 0;
-    extended.set(value, 1);
-    value = extended;
-  }
-
-  if (value.length > 0x7f) {
-    throw new Error("unsupported integer length for DER encoding");
-  }
-
-  const result = new Uint8Array(2 + value.length);
-  result[0] = 0x02;
-  result[1] = value.length;
-  result.set(value, 2);
-
-  return result;
 }
 
 export default requireAccess;
