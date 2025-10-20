@@ -29,10 +29,10 @@ type AccessPayload = {
 type HashName = "SHA-256" | "SHA-384" | "SHA-512";
 type EcNamedCurve = "P-256" | "P-384" | "P-521";
 
-type AccessJwk = JsonWebKey & { kid?: string; kty?: string; crv?: string };
+type AccessJwk = JsonWebKey & { kid?: string; kty?: string; crv?: string; alg?: string };
 
 type SupportedImportParams =
-  | { name: "RSASSA-PKCS1-v1_5"; hash: { name: "SHA-256" } }
+  | { name: "RSASSA-PKCS1-v1_5"; hash: { name: HashName } }
   | { name: "ECDSA"; namedCurve: EcNamedCurve };
 
 type VerifyParams =
@@ -41,6 +41,7 @@ type VerifyParams =
 
 type KeyCache = {
   keys: Map<string, CryptoKey>;
+  jwks: Map<string, AccessJwk>;
   expiresAt: number;
   inflight: Promise<void> | null;
   missing: Map<string, number>;
@@ -68,7 +69,7 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
     return false;
   }
 
-  if (!header?.kid || (header.alg && !ALLOWED_ALGORITHMS.has(header.alg))) {
+  if (!header?.kid || !header.alg || !ALLOWED_ALGORITHMS.has(header.alg)) {
     return false;
   }
 
@@ -78,13 +79,27 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 
   let key: CryptoKey | undefined;
   try {
-    key = await getKey(header.kid, config);
+    key = await getKey(header.kid, header.alg, config);
   } catch (error) {
     console.error("failed to load access signing keys", error);
     return false;
   }
 
   if (!key) return false;
+
+  if (header.alg.startsWith("RS")) {
+    const expectedHash = rsaHashForAlgorithm(header.alg);
+    const keyAlgorithm = key.algorithm as { hash?: { name?: string } };
+    const actualHash = keyAlgorithm.hash?.name;
+    if (expectedHash && actualHash && expectedHash !== actualHash) {
+      console.error("rsa signing algorithm mismatch", {
+        kid: header.kid,
+        expectedHash,
+        actualHash,
+      });
+      return false;
+    }
+  }
 
   const encoder = new TextEncoder();
   const data = encoder.encode(`${parts[0]}.${parts[1]}`);
@@ -109,13 +124,22 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
   }
 }
 
-async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | undefined> {
+async function getKey(
+  kid: string,
+  alg: string | undefined,
+  config: AccessConfig,
+): Promise<CryptoKey | undefined> {
   const cache = getCache(config.jwksUrl);
 
   const now = Date.now();
   const cacheValid = cache.expiresAt > now;
+  const expectedHash = rsaHashForAlgorithm(alg);
+
   if (cacheValid && cache.keys.has(kid)) {
-    return cache.keys.get(kid);
+    const cached = cache.keys.get(kid);
+    if (cached && !shouldReloadRsaKey(cached, expectedHash)) {
+      return cached;
+    }
   }
 
   const missingUntil = cache.missing.get(kid);
@@ -124,7 +148,33 @@ async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | un
 
   await loadJwks(cache, config, forceRefresh);
 
-  const key = cache.keys.get(kid);
+  let key = cache.keys.get(kid);
+  if (key && shouldReloadRsaKey(key, expectedHash)) {
+    const jwk = cache.jwks.get(kid);
+    if (jwk && expectedHash) {
+      try {
+        const algorithm = { name: "RSASSA-PKCS1-v1_5", hash: { name: expectedHash } } as const;
+        key = await crypto.subtle.importKey("jwk", jwk, algorithm, false, ["verify"]);
+        cache.keys.set(kid, key);
+      } catch (error) {
+        console.error("failed to re-import rsa jwk", kid, error);
+        key = undefined;
+      }
+    }
+  }
+
+  if (!key && expectedHash && cache.jwks.has(kid)) {
+    const jwk = cache.jwks.get(kid)!;
+    try {
+      const algorithm = { name: "RSASSA-PKCS1-v1_5", hash: { name: expectedHash } } as const;
+      key = await crypto.subtle.importKey("jwk", jwk, algorithm, false, ["verify"]);
+      cache.keys.set(kid, key);
+    } catch (error) {
+      console.error("failed to import rsa jwk with expected hash", kid, error);
+      key = undefined;
+    }
+  }
+
   if (key) {
     cache.missing.delete(kid);
     return key;
@@ -142,7 +192,7 @@ async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | un
 function getCache(url: string): KeyCache {
   let cache = keyCaches.get(url);
   if (!cache) {
-    cache = { keys: new Map(), expiresAt: 0, inflight: null, missing: new Map() };
+    cache = { keys: new Map(), jwks: new Map(), expiresAt: 0, inflight: null, missing: new Map() };
     keyCaches.set(url, cache);
   }
   return cache;
@@ -167,10 +217,13 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, force = false): P
       const body = await res.json<{ keys?: JsonWebKey[] }>();
       const keys = (body.keys ?? []) as AccessJwk[];
       const imported = new Map<string, CryptoKey>();
+      const jwksByKid = new Map<string, AccessJwk>();
 
       await Promise.all(
         keys.map(async (jwk) => {
           if (!jwk.kid) return;
+
+          jwksByKid.set(jwk.kid, jwk);
 
           const algorithm = getImportAlgorithm(jwk);
           if (!algorithm) return;
@@ -183,6 +236,10 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, force = false): P
           }
         }),
       );
+
+      if (jwksByKid.size > 0) {
+        cache.jwks = jwksByKid;
+      }
 
       if (imported.size > 0) {
         cache.keys = imported;
@@ -216,7 +273,12 @@ function resolveConfig(env?: AccessEnvironment): AccessConfig {
 
 function getImportAlgorithm(jwk: AccessJwk): SupportedImportParams | null {
   if (jwk.kty === "RSA") {
-    return { name: "RSASSA-PKCS1-v1_5", hash: { name: "SHA-256" } };
+    const hashName = rsaHashForAlgorithm(jwk.alg);
+    if (jwk.alg && !hashName) {
+      return null;
+    }
+
+    return { name: "RSASSA-PKCS1-v1_5", hash: { name: hashName ?? "SHA-256" } };
   }
 
   if (jwk.kty === "EC" && typeof jwk.crv === "string") {
@@ -381,6 +443,33 @@ function curveHash(curve: EcNamedCurve | undefined): HashName {
     default:
       return "SHA-256";
   }
+}
+
+function rsaHashForAlgorithm(alg: string | undefined): HashName | null {
+  switch (alg) {
+    case "RS256":
+      return "SHA-256";
+    case "RS384":
+      return "SHA-384";
+    case "RS512":
+      return "SHA-512";
+    default:
+      return null;
+  }
+}
+
+function shouldReloadRsaKey(key: CryptoKey, expectedHash: HashName | null): boolean {
+  if (!expectedHash) {
+    return false;
+  }
+
+  const algorithm = key.algorithm as { name?: string; hash?: { name?: string } };
+  if (algorithm.name !== "RSASSA-PKCS1-v1_5") {
+    return false;
+  }
+
+  const actualHash = algorithm.hash?.name;
+  return Boolean(actualHash && actualHash !== expectedHash);
 }
 
 function normalizeIssuer(value: string): string {
