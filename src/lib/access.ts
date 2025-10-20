@@ -20,16 +20,26 @@ type EcNamedCurve = "P-256" | "P-384" | "P-521";
 type AccessJwk = JsonWebKey & { kid?: string; kty?: string; crv?: string };
 
 type SupportedImportParams =
-  | { name: "RSASSA-PKCS1-v1_5"; hash: { name: "SHA-256" } }
+  | { name: "RSASSA-PKCS1-v1_5"; hash: { name: HashName } }
   | { name: "ECDSA"; namedCurve: EcNamedCurve };
 
 type VerifyParams =
   | { name: "RSASSA-PKCS1-v1_5" }
   | { name: "ECDSA"; hash: { name: HashName } };
 
+type AlgorithmDetails =
+  | { type: "RSA"; hash: HashName }
+  | { type: "EC"; hash: HashName };
+
 const ALLOWED_ALGORITHMS = new Set(["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]);
 
-let cachedKeys: Map<string, CryptoKey> = new Map();
+type CachedKeyEntry = {
+  jwk: AccessJwk;
+  rsaKeys?: Map<HashName, CryptoKey>;
+  ecKey?: CryptoKey;
+};
+
+let cachedKeys: Map<string, CachedKeyEntry> = new Map();
 let cacheExpiresAt = 0;
 let inflightFetch: Promise<void> | null = null;
 
@@ -55,13 +65,18 @@ export async function requireAccess(req: Request): Promise<boolean> {
     return false;
   }
 
+  if (!header.alg) return false;
+
   if (!payload || !isAudienceValid(payload.aud)) return false;
   if (!payload.exp || payload.exp * 1000 <= Date.now()) return false;
   if (payload.iss !== ACCESS_ISSUER) return false;
 
+  const algorithmDetails = getAlgorithmDetails(header.alg);
+  if (!algorithmDetails) return false;
+
   let key: CryptoKey | undefined;
   try {
-    key = await getKey(header.kid);
+    key = await getKey(header.kid, algorithmDetails);
   } catch (error) {
     console.error("failed to load access signing keys", error);
     return false;
@@ -71,13 +86,11 @@ export async function requireAccess(req: Request): Promise<boolean> {
 
   const encoder = new TextEncoder();
   const data = encoder.encode(`${parts[0]}.${parts[1]}`);
-  const signature = base64UrlToUint8Array(parts[2]);
+  const rawSignature = base64UrlToUint8Array(parts[2]);
+  const signature =
+    algorithmDetails.type === "EC" ? joseToDerSignature(rawSignature) : rawSignature;
 
-  const verifyParams = getVerifyParams(key);
-  if (!verifyParams) {
-    console.error("unsupported key algorithm", key.algorithm);
-    return false;
-  }
+  const verifyParams = getVerifyParams(algorithmDetails);
 
   try {
     return await crypto.subtle.verify(verifyParams, key, signature, data);
@@ -87,13 +100,13 @@ export async function requireAccess(req: Request): Promise<boolean> {
   }
 }
 
-async function getKey(kid: string): Promise<CryptoKey | undefined> {
+async function getKey(kid: string, algorithm: AlgorithmDetails): Promise<CryptoKey | undefined> {
   if (cacheExpiresAt > Date.now() && cachedKeys.has(kid)) {
-    return cachedKeys.get(kid);
+    return importCachedKey(kid, algorithm);
   }
 
   await loadJwks();
-  return cachedKeys.get(kid);
+  return importCachedKey(kid, algorithm);
 }
 
 async function loadJwks(): Promise<void> {
@@ -115,20 +128,14 @@ async function loadJwks(): Promise<void> {
       const body = await res.json<{ keys?: JsonWebKey[] }>();
       const keys = (body.keys ?? []) as AccessJwk[];
 
-      const map = new Map<string, CryptoKey>();
+      const map = new Map<string, CachedKeyEntry>();
       await Promise.all(
         keys.map(async (jwk) => {
           if (!jwk.kid) return;
 
-          const algorithm = getImportAlgorithm(jwk);
-          if (!algorithm) return;
+          if (!isSupportedJwk(jwk)) return;
 
-          try {
-            const cryptoKey = await crypto.subtle.importKey("jwk", jwk, algorithm, false, ["verify"]);
-            map.set(jwk.kid, cryptoKey);
-          } catch (error) {
-            console.error("failed to import jwk", jwk.kid, error);
-          }
+          map.set(jwk.kid, { jwk });
         }),
       );
 
@@ -151,34 +158,102 @@ async function loadJwks(): Promise<void> {
   }
 }
 
-function getImportAlgorithm(jwk: AccessJwk): SupportedImportParams | null {
-  if (jwk.kty === "RSA") {
-    return { name: "RSASSA-PKCS1-v1_5", hash: { name: "SHA-256" } };
+async function importCachedKey(kid: string, algorithm: AlgorithmDetails): Promise<CryptoKey | undefined> {
+  const entry = cachedKeys.get(kid);
+  if (!entry) return undefined;
+
+  if (algorithm.type === "RSA") {
+    if (!entry.rsaKeys) {
+      entry.rsaKeys = new Map();
+    }
+
+    const existing = entry.rsaKeys.get(algorithm.hash);
+    if (existing) {
+      return existing;
+    }
+
+    const importParams: SupportedImportParams = {
+      name: "RSASSA-PKCS1-v1_5",
+      hash: { name: algorithm.hash },
+    };
+
+    try {
+      const cryptoKey = await crypto.subtle.importKey("jwk", entry.jwk, importParams, false, ["verify"]);
+      entry.rsaKeys.set(algorithm.hash, cryptoKey);
+      return cryptoKey;
+    } catch (error) {
+      console.error("failed to import rsa jwk", kid, error);
+      return undefined;
+    }
   }
 
-  if (jwk.kty === "EC" && typeof jwk.crv === "string") {
-    const curve = jwk.crv as EcNamedCurve;
-    if (curve === "P-256" || curve === "P-384" || curve === "P-521") {
-      return { name: "ECDSA", namedCurve: curve };
+  if (algorithm.type === "EC") {
+    if (entry.ecKey) {
+      return entry.ecKey;
     }
+
+    const importParams = getEcImportAlgorithm(entry.jwk);
+    if (!importParams) return undefined;
+
+    try {
+      const cryptoKey = await crypto.subtle.importKey("jwk", entry.jwk, importParams, false, ["verify"]);
+      entry.ecKey = cryptoKey;
+      return cryptoKey;
+    } catch (error) {
+      console.error("failed to import ec jwk", kid, error);
+      return undefined;
+    }
+  }
+
+  return undefined;
+}
+
+function isSupportedJwk(jwk: AccessJwk): boolean {
+  if (jwk.kty === "RSA") {
+    return true;
+  }
+
+  return getEcImportAlgorithm(jwk) !== null;
+}
+
+function getEcImportAlgorithm(jwk: AccessJwk): SupportedImportParams | null {
+  if (jwk.kty !== "EC" || typeof jwk.crv !== "string") {
+    return null;
+  }
+
+  const curve = jwk.crv as EcNamedCurve;
+  if (curve === "P-256" || curve === "P-384" || curve === "P-521") {
+    return { name: "ECDSA", namedCurve: curve };
   }
 
   return null;
 }
 
-function getVerifyParams(key: CryptoKey): VerifyParams | null {
-  const algorithm = key.algorithm as { name: string; namedCurve?: EcNamedCurve };
-
-  if (algorithm.name === "RSASSA-PKCS1-v1_5") {
+function getVerifyParams(algorithm: AlgorithmDetails): VerifyParams {
+  if (algorithm.type === "RSA") {
     return { name: "RSASSA-PKCS1-v1_5" };
   }
 
-  if (algorithm.name === "ECDSA") {
-    const hashName = curveHash(algorithm.namedCurve);
-    return { name: "ECDSA", hash: { name: hashName } };
-  }
+  return { name: "ECDSA", hash: { name: algorithm.hash } };
+}
 
-  return null;
+function getAlgorithmDetails(alg: string | undefined): AlgorithmDetails | null {
+  switch (alg) {
+    case "RS256":
+      return { type: "RSA", hash: "SHA-256" };
+    case "RS384":
+      return { type: "RSA", hash: "SHA-384" };
+    case "RS512":
+      return { type: "RSA", hash: "SHA-512" };
+    case "ES256":
+      return { type: "EC", hash: "SHA-256" };
+    case "ES384":
+      return { type: "EC", hash: "SHA-384" };
+    case "ES512":
+      return { type: "EC", hash: "SHA-512" };
+    default:
+      return null;
+  }
 }
 
 function decodeSection<T>(section: string): T {
@@ -207,15 +282,72 @@ function isAudienceValid(aud: AccessPayload["aud"]): boolean {
   return aud.includes(ACCESS_AUDIENCE);
 }
 
-function curveHash(curve: EcNamedCurve | undefined): HashName {
-  switch (curve) {
-    case "P-384":
-      return "SHA-384";
-    case "P-521":
-      return "SHA-512";
-    default:
-      return "SHA-256";
+function joseToDerSignature(signature: Uint8Array): Uint8Array {
+  if (signature.length % 2 !== 0) {
+    throw new Error("invalid ECDSA signature length");
   }
+
+  const half = signature.length / 2;
+  const r = trimInteger(signature.subarray(0, half));
+  const s = trimInteger(signature.subarray(half));
+
+  const encodedR = ensurePositiveInteger(r);
+  const encodedS = ensurePositiveInteger(s);
+
+  const sequenceLength = 2 + encodedR.length + 2 + encodedS.length;
+  const lengthBytes = encodeLength(sequenceLength);
+  const totalLength = 1 + lengthBytes.length + sequenceLength;
+
+  const der = new Uint8Array(totalLength);
+  let offset = 0;
+  der[offset++] = 0x30;
+  der.set(lengthBytes, offset);
+  offset += lengthBytes.length;
+  der[offset++] = 0x02;
+  der[offset++] = encodedR.length;
+  der.set(encodedR, offset);
+  offset += encodedR.length;
+  der[offset++] = 0x02;
+  der[offset++] = encodedS.length;
+  der.set(encodedS, offset);
+
+  return der;
+}
+
+function trimInteger(bytes: Uint8Array): Uint8Array {
+  let start = 0;
+  while (start < bytes.length - 1 && bytes[start] === 0) {
+    start += 1;
+  }
+
+  return bytes.subarray(start);
+}
+
+function ensurePositiveInteger(bytes: Uint8Array): Uint8Array {
+  if (bytes.length === 0) {
+    return new Uint8Array([0]);
+  }
+
+  if (bytes[0] & 0x80) {
+    const prefixed = new Uint8Array(bytes.length + 1);
+    prefixed[0] = 0x00;
+    prefixed.set(bytes, 1);
+    return prefixed;
+  }
+
+  return bytes;
+}
+
+function encodeLength(length: number): Uint8Array {
+  if (length < 0x80) {
+    return Uint8Array.of(length);
+  }
+
+  if (length < 0x100) {
+    return Uint8Array.of(0x81, length);
+  }
+
+  return Uint8Array.of(0x82, (length >> 8) & 0xff, length & 0xff);
 }
 
 export default requireAccess;
