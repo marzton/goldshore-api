@@ -86,21 +86,25 @@ export async function requireAccess(req: Request): Promise<boolean> {
 
   const encoder = new TextEncoder();
   const data = encoder.encode(`${parts[0]}.${parts[1]}`);
-  const rawSignature = base64UrlToUint8Array(parts[2]);
-  let signature = rawSignature;
-
   const verifyParams = getVerifyParams(algorithmDetails);
 
-  if (verifyParams.name === "ECDSA") {
-    try {
-      signature = joseToDerSignature(rawSignature);
-    } catch (error) {
-      console.error("failed to normalize ecdsa signature", error);
-      return false;
-    }
+  let signature: Uint8Array;
+  try {
+    const rawSignature = base64UrlToUint8Array(parts[2]);
+    signature =
+      verifyParams.name === "ECDSA"
+        ? joseToDerSignature(rawSignature)
+        : rawSignature;
+  } catch (error) {
+    console.error("failed to normalize ecdsa signature", error);
+    return false;
   }
 
   try {
+    const rawSignature = base64UrlToUint8Array(parts[2]);
+    const signature =
+      verifyParams.name === "ECDSA" ? joseToDerSignature(rawSignature) : rawSignature;
+
     return await crypto.subtle.verify(verifyParams, key, signature, data);
   } catch (error) {
     console.error("access token verification failed", error);
