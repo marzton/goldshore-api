@@ -139,7 +139,7 @@ function getCache(url: string): KeyCache {
 }
 
 function getCacheKey(kid: string, alg?: string): string {
-  return alg ? `${kid}:${alg}` : kid;
+  return alg ? `${alg}:${encodeURIComponent(kid)}` : kid;
 }
 
 async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
