@@ -374,7 +374,13 @@ function curveHash(curve: EcNamedCurve | undefined): HashName {
 }
 
 function normalizeIssuer(value: string): string {
-  return value.replace(/\/+$/, "");
+  let end = value.length;
+
+  while (end > 0 && value.charCodeAt(end - 1) === 0x2f) {
+    end -= 1;
+  }
+
+  return end === value.length ? value : value.slice(0, end);
 }
 
 export default requireAccess;
