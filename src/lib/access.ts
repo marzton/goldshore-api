@@ -95,13 +95,12 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
     return false;
   }
 
-  let normalizedSignature = signature;
-  if (verifyParams.name === "ECDSA") {
-    const derSignature = normalizeEcdsaSignature(signature, key);
-    if (!derSignature) {
-      return false;
-    }
-    normalizedSignature = derSignature;
+  const normalizedSignature =
+    verifyParams.name === "ECDSA"
+      ? normalizeEcdsaSignature(signature, key)
+      : signature;
+  if (!normalizedSignature) {
+    return false;
   }
 
   try {
