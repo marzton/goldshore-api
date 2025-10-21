@@ -132,12 +132,13 @@ export async function requireAccess(req: Request): Promise<boolean> {
   const data = encoder.encode(`${parts[0]}.${parts[1]}`);
   const verifyParams = getVerifyParams(algorithmDetails);
 
-  const signature = decodeSignature(parts[2], verifyParams);
-  if (!signature) {
-    return false;
-  }
-
   try {
+    let signature = base64UrlToUint8Array(parts[2]);
+
+    if (verifyParams.name === "ECDSA") {
+      signature = joseToDerSignature(signature);
+    }
+
     return await crypto.subtle.verify(verifyParams, key, signature, data);
   } catch (error) {
     console.error("access token verification failed", error);
