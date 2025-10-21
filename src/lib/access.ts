@@ -98,6 +98,18 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
     console.error("invalid access token signature", error);
     return false;
   }
+  const signature = (() => {
+    try {
+      return base64UrlToUint8Array(parts[2]);
+    } catch (error) {
+      console.error("invalid access token signature", error);
+      return null;
+    }
+  })();
+
+  if (!signature) {
+    return false;
+  }
 
   if (!signature) {
     return false;
@@ -384,6 +396,20 @@ function normalizeIssuer(value: string): string {
     end -= 1;
   }
   return end === value.length ? value : value.slice(0, end);
+  if (end === value.length) {
+    return value;
+  }
+
+  return value.slice(0, end);
+  while (end > 0 && value.charCodeAt(end - 1) === 0x2f) {
+    end -= 1;
+  }
+
+  if (end === value.length) {
+    return value;
+  }
+
+  return value.slice(0, end);
 }
 
 export default requireAccess;
