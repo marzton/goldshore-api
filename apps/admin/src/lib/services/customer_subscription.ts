@@ -1,3 +1,9 @@
+import {
+  ensureSubscriptionEndsAt,
+  hasSubscriptionExpired,
+  normalizeSubscriptionEndsAt,
+} from "@/lib/utils/subscription";
+
 export const CUSTOMER_SUBSCRIPTION_QUERIES = {
   BASE_SELECT: `
     SELECT 
@@ -35,10 +41,17 @@ const processCustomerSubscriptionResults = (rows) => {
 
   rows.forEach((row) => {
     if (!subscriptionsMap.has(row.id)) {
+      const subscriptionEndsAt = normalizeSubscriptionEndsAt(
+        row.subscription_ends_at,
+      );
+      const status = hasSubscriptionExpired(row.subscription_ends_at)
+        ? "expired"
+        : row.status;
+
       const customerSubscription = {
         id: row.id,
-        status: row.status,
-        subscription_ends_at: row.subscription_ends_at,
+        status,
+        subscription_ends_at: subscriptionEndsAt,
         customer: {
           id: row.customer_id,
           name: row.customer_name,
@@ -102,13 +115,15 @@ export class CustomerSubscriptionService {
       customer_id,
       subscription_id,
       status = "active",
-      subscription_ends_at = Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days from now by default
+      subscription_ends_at,
     } = customerSubscriptionData;
+
+    const normalizedEndsAt = ensureSubscriptionEndsAt(subscription_ends_at);
 
     const response = await this.DB.prepare(
       CUSTOMER_SUBSCRIPTION_QUERIES.INSERT_CUSTOMER_SUBSCRIPTION,
     )
-      .bind(customer_id, subscription_id, status, subscription_ends_at)
+      .bind(customer_id, subscription_id, status, normalizedEndsAt)
       .run();
 
     if (!response.success) {
@@ -136,10 +151,12 @@ export class CustomerSubscriptionService {
   }
 
   async updateSubscriptionEndsAt(id, subscriptionEndsAt) {
+    const normalizedEndsAt = ensureSubscriptionEndsAt(subscriptionEndsAt);
+
     const response = await this.DB.prepare(
       CUSTOMER_SUBSCRIPTION_QUERIES.UPDATE_SUBSCRIPTION_ENDS_AT,
     )
-      .bind(subscriptionEndsAt, id)
+      .bind(normalizedEndsAt, id)
       .run();
 
     if (!response.success) {
