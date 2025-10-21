@@ -41,6 +41,7 @@ type VerifyParams =
 
 type KeyCache = {
   keys: Map<string, CryptoKey>;
+  jwks: Map<string, AccessJwk>;
   expiresAt: number;
   inflight: Promise<void> | null;
   missing: Map<string, number>;
@@ -78,7 +79,7 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 
   let key: CryptoKey | undefined;
   try {
-    key = await getKey(header.kid, config);
+    key = await getKey(header.kid, config, header.alg);
   } catch (error) {
     console.error("failed to load access signing keys", error);
     return false;
@@ -109,40 +110,36 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
   }
 }
 
-async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | undefined> {
+async function getKey(kid: string, config: AccessConfig, alg?: string): Promise<CryptoKey | undefined> {
   const cache = getCache(config.jwksUrl);
 
-  const now = Date.now();
-  const cacheValid = cache.expiresAt > now;
-  if (cacheValid && cache.keys.has(kid)) {
+  if (cache.expiresAt > Date.now() && cache.keys.has(kid)) {
+    const key = cache.keys.get(kid);
+    if (!key) return undefined;
+    return ensureKeyForAlgorithm(kid, key, cache, alg);
+  }
+
+  if (cache.expiresAt > Date.now()) {
+    const imported = await importKeyFromCache(kid, cache, alg);
+    if (imported) {
+      return imported;
+    }
     return cache.keys.get(kid);
   }
 
-  const missingUntil = cache.missing.get(kid);
-  const missingValid = typeof missingUntil === "number" && missingUntil > now;
-  const forceRefresh = cacheValid && !cache.keys.has(kid) && !missingValid;
-
-  await loadJwks(cache, config, forceRefresh);
-
+  await loadJwks(cache, config);
   const key = cache.keys.get(kid);
   if (key) {
-    cache.missing.delete(kid);
-    return key;
+    return ensureKeyForAlgorithm(kid, key, cache, alg);
   }
 
-  const afterLoadNow = Date.now();
-  const refreshedValid = cache.expiresAt > afterLoadNow;
-  if (refreshedValid) {
-    cache.missing.set(kid, afterLoadNow + JWKS_CACHE_TTL_MS);
-  }
-
-  return undefined;
+  return importKeyFromCache(kid, cache, alg);
 }
 
 function getCache(url: string): KeyCache {
   let cache = keyCaches.get(url);
   if (!cache) {
-    cache = { keys: new Map(), expiresAt: 0, inflight: null, missing: new Map() };
+    cache = { keys: new Map(), jwks: new Map(), expiresAt: 0, inflight: null };
     keyCaches.set(url, cache);
   }
   return cache;
@@ -167,10 +164,13 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, force = false): P
       const body = await res.json<{ keys?: JsonWebKey[] }>();
       const keys = (body.keys ?? []) as AccessJwk[];
       const imported = new Map<string, CryptoKey>();
+      const jwksByKid = new Map<string, AccessJwk>();
 
       await Promise.all(
         keys.map(async (jwk) => {
           if (!jwk.kid) return;
+
+          jwksByKid.set(jwk.kid, jwk);
 
           const algorithm = getImportAlgorithm(jwk);
           if (!algorithm) return;
@@ -186,12 +186,16 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, force = false): P
 
       if (imported.size > 0) {
         cache.keys = imported;
+        cache.jwks = jwksByKid;
         cache.expiresAt = Date.now() + JWKS_CACHE_TTL_MS;
         for (const kid of imported.keys()) {
           cache.missing.delete(kid);
         }
       } else if (cache.keys.size === 0) {
         cache.expiresAt = 0;
+        cache.jwks = jwksByKid;
+      } else if (jwksByKid.size > 0) {
+        cache.jwks = jwksByKid;
       }
     })().catch((error) => {
       cache.inflight = null;
@@ -214,14 +218,11 @@ function resolveConfig(env?: AccessEnvironment): AccessConfig {
   return { audience, issuer, jwksUrl };
 }
 
-function getImportAlgorithm(jwk: AccessJwk): SupportedImportParams | null {
+function getImportAlgorithm(jwk: AccessJwk, algOverride?: string): SupportedImportParams | null {
   if (jwk.kty === "RSA") {
-    const hash = rsaHash(jwk.alg);
-    if (!hash) {
-      return null;
-    }
-
-    return { name: "RSASSA-PKCS1-v1_5", hash: { name: hash } };
+    const hashName = rsaHashFromAlg(algOverride ?? jwk.alg);
+    if (!hashName) return null;
+    return { name: "RSASSA-PKCS1-v1_5", hash: { name: hashName } };
   }
 
   if (jwk.kty === "EC" && typeof jwk.crv === "string") {
@@ -234,16 +235,78 @@ function getImportAlgorithm(jwk: AccessJwk): SupportedImportParams | null {
   return null;
 }
 
-function rsaHash(algorithm?: string): HashName | null {
-  switch (algorithm) {
+async function ensureKeyForAlgorithm(
+  kid: string,
+  key: CryptoKey,
+  cache: KeyCache,
+  alg?: string,
+): Promise<CryptoKey> {
+  if (!alg || key.algorithm.name !== "RSASSA-PKCS1-v1_5") {
+    return key;
+  }
+
+  const expectedHash = rsaHashFromAlg(alg);
+  if (!expectedHash) {
+    return key;
+  }
+
+  const rsaAlgorithm = key.algorithm as { hash?: { name?: string } };
+  const currentHash = rsaAlgorithm.hash?.name as HashName | undefined;
+  if (currentHash === expectedHash) {
+    return key;
+  }
+
+  const jwk = cache.jwks.get(kid);
+  if (!jwk) {
+    return key;
+  }
+
+  const importAlgorithm = getImportAlgorithm(jwk, alg);
+  if (!importAlgorithm) {
+    return key;
+  }
+
+  try {
+    const reimported = await crypto.subtle.importKey("jwk", jwk, importAlgorithm, false, ["verify"]);
+    cache.keys.set(kid, reimported);
+    return reimported;
+  } catch (error) {
+    console.error("failed to re-import jwk", kid, alg, error);
+    return key;
+  }
+}
+
+async function importKeyFromCache(kid: string, cache: KeyCache, alg?: string): Promise<CryptoKey | undefined> {
+  const jwk = cache.jwks.get(kid);
+  if (!jwk) {
+    return undefined;
+  }
+
+  const algorithm = getImportAlgorithm(jwk, alg);
+  if (!algorithm) {
+    return undefined;
+  }
+
+  try {
+    const imported = await crypto.subtle.importKey("jwk", jwk, algorithm, false, ["verify"]);
+    cache.keys.set(kid, imported);
+    return imported;
+  } catch (error) {
+    console.error("failed to import jwk for algorithm", kid, alg, error);
+    return undefined;
+  }
+}
+
+function rsaHashFromAlg(alg?: string): HashName | null {
+  if (typeof alg !== "string") return null;
+
+  switch (alg.toUpperCase()) {
     case "RS256":
       return "SHA-256";
     case "RS384":
       return "SHA-384";
     case "RS512":
       return "SHA-512";
-    case undefined:
-      return "SHA-256";
     default:
       return null;
   }
