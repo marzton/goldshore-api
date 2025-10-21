@@ -1,3 +1,20 @@
+const DEFAULT_ACCESS_AUDIENCE = "d79c2b6106887967cfda1cbcea881399352402f5833084b7f3844cd29c205afa";
+const DEFAULT_ACCESS_ISSUER = "https://goldshore.cloudflareaccess.com";
+const JWKS_PATH = "/cdn-cgi/access/certs";
+const JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+export interface AccessEnvironment {
+  ACCESS_AUDIENCE?: string;
+  ACCESS_ISSUER?: string;
+  ACCESS_JWKS_URL?: string;
+}
+
+interface AccessConfig {
+  audience: string;
+  issuer: string;
+  jwksUrl: string;
+}
+
 const ACCESS_AUDIENCE =
   "d79c2b6106887967cfda1cbcea881399352402f5833084b7f3844cd29c205afa";
 const ACCESS_ISSUER = "https://goldshore.cloudflareaccess.com";
@@ -33,6 +50,20 @@ type VerifyParams =
   | { name: "RSASSA-PKCS1-v1_5" }
   | { name: "ECDSA"; hash: { name: HashName } };
 
+type KeyCache = {
+  keys: Map<string, CryptoKey>;
+  expiresAt: number;
+  inflight: Promise<void> | null;
+};
+
+const ALLOWED_ALGORITHMS = new Set(["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]);
+const keyCaches = new Map<string, KeyCache>();
+
+export async function requireAccess(req: Request, env?: AccessEnvironment): Promise<boolean> {
+  const jwt = req.headers.get("CF-Access-Jwt-Assertion");
+  if (!jwt) return false;
+
+  const config = resolveConfig(env);
 type AlgorithmDetails =
   | { type: "RSA"; hash: HashName }
   | { type: "EC"; hash: HashName };
