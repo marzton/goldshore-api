@@ -244,7 +244,8 @@ function base64UrlToUint8Array(value: string): Uint8Array {
 function isAudienceValid(aud: AccessPayload["aud"], expected: string): boolean {
   if (!aud) return false;
   if (typeof aud === "string") return aud === expected;
-  return aud.includes(expected);
+  if (Array.isArray(aud)) return aud.includes(expected);
+  return false;
 }
 
 function normalizeSignature(signature: Uint8Array, key: CryptoKey, verifyParams: VerifyParams): Uint8Array | null {
