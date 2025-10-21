@@ -1,7 +1,10 @@
 import { corsHeaders } from "./lib/cors";
 import { requireAccess } from "./lib/access";
 import { bad, ok, unauthorized } from "./lib/util";
-import { loadSystemPrompt } from "./agent/prompt";
+import { handleCodexAgent } from "./agent/codex-agent";
+import { handleAutoApply } from "./agent/autoapply";
+import { handleStatus } from "./agent/status";
+import { handleLogs } from "./agent/logs";
 import type { Env } from "./types";
 
 const notFound = (headers: Headers): Response =>
@@ -15,6 +18,9 @@ const withContentType = (headers: Headers, value: string): Headers => {
   copy.set("Content-Type", value);
   return copy;
 };
+
+const methodNotAllowed = (headers: Headers): Response =>
+  bad("METHOD_NOT_ALLOWED", 405, headers);
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
@@ -30,53 +36,41 @@ export default {
       return ok(
         {
           ok: true,
-          service: "goldshore-api",
+          service: env.SERVICE_NAME ?? "goldshore-agent",
           time: new Date().toISOString()
         },
         cors
       );
     }
 
-    if (url.pathname === "/v1/agent/plan" && request.method === "POST") {
+    if (url.pathname === "/status" && request.method === "GET") {
+      return handleStatus(env, cors);
+    }
+
+    if (url.pathname === "/logs" && request.method === "GET") {
       const access = await requireAccess(request, env);
       if (!access.authorized) {
         const headers = new Headers(cors);
         headers.set("WWW-Authenticate", 'Bearer realm="Cloudflare Access"');
         return unauthorized(headers);
       }
+      return handleLogs(request, env, cors, access.identity ?? null);
+    }
 
-      let payload: unknown;
-      try {
-        payload = await request.json();
-      } catch (_err) {
-        return bad("INVALID_INPUT", 400, cors, "Body must be valid JSON");
+    if (url.pathname.startsWith("/codex-agent")) {
+      if (request.method !== "POST") {
+        return methodNotAllowed(cors);
       }
 
-      const body = (payload ?? {}) as Record<string, unknown>;
-      const goalRaw = body.goal;
-      const goal = typeof goalRaw === "string" ? goalRaw.trim() : "";
+      return handleCodexAgent(request, env, cors);
+    }
 
-      if (!goal) {
-        return bad("INVALID_INPUT", 400, cors, "Provide goal field");
+    if (url.pathname.startsWith("/autoapply")) {
+      if (request.method !== "GET" && request.method !== "POST") {
+        return methodNotAllowed(cors);
       }
 
-      const prompt = await loadSystemPrompt(_ctx, env);
-      const plan = [
-        "GET /v1/whoami",
-        "GET /v1/health",
-        "GET /v1/cors",
-        "Report status"
-      ];
-
-      return ok(
-        {
-          ok: true,
-          data: { plan, goal },
-          hint: "Static plan; integrate LLM for dynamic planning.",
-          meta: { prompt }
-        },
-        cors
-      );
+      return handleAutoApply(request, env, cors);
     }
 
     if (url.pathname === "/v1/whoami") {

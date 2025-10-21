@@ -11,10 +11,18 @@
 | `www` | CNAME | `goldshore-web.pages.dev` | Proxied | Canonical marketing hostname |
 | `web` | CNAME | `goldshore-web.pages.dev` | Proxied | Alternate marketing hostname |
 | `admin` | CNAME | `goldshore-admin.pages.dev` | Proxied | Admin console served via Cloudflare Pages + Access |
-| `api` | CNAME | `goldshore-api.gslabs.workers.dev` | Proxied | Worker production route |
+| `api` | CNAME | `goldshore-agent.gslabs.workers.dev` | Proxied | Worker production route |
+| `banproof` | CNAME | `goldshore-web.pages.dev` | Proxied | Mirror BanProof.me apex through Pages |
 | `*` | (none) | — | — | Wildcard **not** configured; stray hosts must 404 |
 
 All legacy A/AAAA records (`100.2.111.41`, etc.) and circular CNAMES must be deleted.
+
+## DNS (zone: banproof.me)
+
+| Name | Type | Target | Proxy | Notes |
+| --- | --- | --- | --- | --- |
+| `@` | CNAME | `goldshore.org` | Proxied | Apex mirrors marketing site |
+| `api` | CNAME | `goldshore-agent.gslabs.workers.dev` | Proxied | Public mirror of GoldShore Agent (GET-only enforced) |
 
 ## Cloudflare Pages (project: `goldshore-web`)
 
@@ -25,16 +33,15 @@ All legacy A/AAAA records (`100.2.111.41`, etc.) and circular CNAMES must be del
 - Preview domains: protected by Cloudflare Access (`https://*.goldshore-web.pages.dev/*`)
 - Static asset: `public/access-denied.html` published for Access failures
 
-## Cloudflare Workers (service: `goldshore-api`)
+## Cloudflare Workers (service: `goldshore-agent`)
 
-- Routes: `api.goldshore.org/*` (zone `goldshore.org`, proxy ON)
-- workers.dev: enabled for smoke testing (`https://goldshore-api.gslabs.workers.dev`)
+- Routes: `api.goldshore.org/*` (zone `goldshore.org`, proxy ON), `api.banproof.me/*` (zone `banproof.me`, proxy ON)
+- workers.dev: enabled for smoke testing (`https://goldshore-agent.gslabs.workers.dev`)
 - Entry module: `src/index.ts`
 - CORS: allows Gold Shore web origins, `Cf-Access-Jwt-Assertion` header permitted
-- Health check: `GET /health` → `{ "ok": true, "service": "goldshore-api" }`
-- Authenticated introspection: `GET /v1/whoami` (requires valid Access token)
-- Secrets: stored via Wrangler (`wrangler secret put`) using names `ACCESS_ISSUER`, `ACCESS_JWKS_URL`, optional future
-  service bindings as needed
+- Public metadata: `GET /health`, `GET /status`
+- Protected automation: `POST /codex-agent`, `POST /autoapply`, `GET /logs`, `GET /v1/whoami`
+- Secrets: stored via Wrangler (`wrangler secret put`) using names `ACCESS_ISSUER`, `ACCESS_JWKS_URL`, `OPENAI_API_KEY`, `SERVICE_NAME`, `AI_MODEL`, etc.
 
 ## Cloudflare Access
 
@@ -58,7 +65,7 @@ All legacy A/AAAA records (`100.2.111.41`, etc.) and circular CNAMES must be del
    - Identity failure redirect: `https://goldshore-web.pages.dev/access-denied`
 
 2. **Gold Shore Admin (Prod/Staging)**
-   - Domains: `https://goldshore-admin.goldshore.workers.dev/*`, `https://admin.goldshore.org/*`, `https://api.goldshore.org/*`, `https://goldshore-api.gslabs.workers.dev/*`
+   - Domains: `https://goldshore-admin.goldshore.workers.dev/*`, `https://admin.goldshore.org/*`, `https://api.goldshore.org/*`, `https://api.banproof.me/*`, `https://goldshore-agent.gslabs.workers.dev/*`
    - Policies (order matters):
      1. Allow: Device posture — Cloudflare WARP (Gold Shore managed fleet)
      2. Allow: email glob `*@goldshore.org`
