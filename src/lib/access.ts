@@ -108,6 +108,8 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
   if (!normalizedSignature) {
     return false;
   }
+  const normalizedSignature =
+    verifyParams.name === "ECDSA" ? convertJoseSignatureToDer(signature) : signature;
 
   try {
     return await crypto.subtle.verify(verifyParams, key, normalizedSignature, data);
