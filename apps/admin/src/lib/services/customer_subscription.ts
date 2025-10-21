@@ -1,3 +1,8 @@
+import {
+  deriveSubscriptionStatus,
+  resolveSubscriptionEndsAt,
+} from "@/lib/utils/subscription";
+
 export const CUSTOMER_SUBSCRIPTION_QUERIES = {
   BASE_SELECT: `
     SELECT 
@@ -35,10 +40,14 @@ const processCustomerSubscriptionResults = (rows) => {
 
   rows.forEach((row) => {
     if (!subscriptionsMap.has(row.id)) {
+      const subscriptionEndsAt = resolveSubscriptionEndsAt(
+        row.subscription_ends_at,
+      );
+
       const customerSubscription = {
         id: row.id,
-        status: row.status,
-        subscription_ends_at: row.subscription_ends_at,
+        status: deriveSubscriptionStatus(row.status, subscriptionEndsAt),
+        subscription_ends_at: subscriptionEndsAt,
         customer: {
           id: row.customer_id,
           name: row.customer_name,
