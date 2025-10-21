@@ -205,14 +205,17 @@ async function importJwk(jwk: AccessJwk): Promise<CachedKey | null> {
 }
 
 function rsaHashesFromJwk(jwk: AccessJwk): HashName[] {
-  const jwkAlg = "alg" in jwk ? (jwk.alg as string | undefined) : undefined;
-  const normalized = normalizeAlgorithm(jwkAlg);
-  if (normalized && normalized.startsWith("RS")) {
-    const hash = algorithmHash(normalized);
-    return hash ? [hash] : ["SHA-256", "SHA-384", "SHA-512"];
+  const algorithms = getRsaAlgorithms(jwk);
+  const hashes: HashName[] = [];
+
+  for (const algorithm of algorithms) {
+    const hash = RSA_HASH_BY_ALGORITHM[algorithm];
+    if (hash && !hashes.includes(hash)) {
+      hashes.push(hash);
+    }
   }
 
-  return ["SHA-256", "SHA-384", "SHA-512"];
+  return hashes.length > 0 ? hashes : (Object.values(RSA_HASH_BY_ALGORITHM) as HashName[]);
 }
 
 function algorithmHash(algorithm: AccessAlgorithm): HashName | null {
@@ -595,14 +598,17 @@ function isRsaAlgorithm(value: string): value is keyof typeof RSA_HASH_BY_ALGORI
 }
 
 function rsaHashesFromJwk(jwk: AccessJwk): HashName[] {
-  const jwkAlg = "alg" in jwk ? (jwk.alg as string | undefined) : undefined;
-  const normalized = normalizeAlgorithm(jwkAlg);
-  if (normalized && normalized.startsWith("RS")) {
-    const hash = algorithmHash(normalized);
-    return hash ? [hash] : ["SHA-256", "SHA-384", "SHA-512"];
+  const algorithms = getRsaAlgorithms(jwk);
+  const hashes: HashName[] = [];
+
+  for (const algorithm of algorithms) {
+    const hash = RSA_HASH_BY_ALGORITHM[algorithm];
+    if (hash && !hashes.includes(hash)) {
+      hashes.push(hash);
+    }
   }
 
-  return ["SHA-256", "SHA-384", "SHA-512"];
+  return hashes.length > 0 ? hashes : (Object.values(RSA_HASH_BY_ALGORITHM) as HashName[]);
 }
 
 function algorithmHash(algorithm: AccessAlgorithm): HashName | null {
