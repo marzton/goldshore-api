@@ -22,6 +22,10 @@ npm run dev
 
 The dev server listens on `http://127.0.0.1:8787`. Provide `CF-Access-*` headers when exercising `/v1/*` routes locally.
 
+
+## Automation directive
+
+For deployment agents or GitHub Actions that orchestrate the goldshore.org stack, follow the [Gold Shore Unified Infrastructure agent directive](docs/automation/GOLD_SHORE_UNIFIED_INFRA.md). It explains how the Cloudflare Pages front-end and Cloudflare Worker API share the domain without conflict and enumerates the validation steps expected before and after deploys.
 ## Deploy
 
 * API → Cloudflare Worker via `.github/workflows/deploy-worker.yml`
