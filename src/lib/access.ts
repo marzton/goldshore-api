@@ -95,10 +95,7 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
     return false;
   }
 
-  const normalizedSignature =
-    verifyParams.name === "ECDSA"
-      ? normalizeEcdsaSignature(signature, key)
-      : signature;
+  const normalizedSignature = normalizeSignature(signature, key, verifyParams);
   if (!normalizedSignature) {
     return false;
   }
@@ -109,6 +106,18 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
     console.error("access token verification failed", error);
     return false;
   }
+}
+
+function normalizeSignature(
+  signature: Uint8Array,
+  key: CryptoKey,
+  verifyParams: VerifyParams,
+): Uint8Array | null {
+  if (verifyParams.name !== "ECDSA") {
+    return signature;
+  }
+
+  return normalizeEcdsaSignature(signature, key);
 }
 
 async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | undefined> {
