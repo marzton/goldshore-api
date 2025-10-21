@@ -331,25 +331,25 @@ function convertJoseSignatureToDer(signature: Uint8Array): Uint8Array {
     s = prependZero(s);
   }
 
-  const rLengthBytes = encodeDerLength(r.length);
-  const sLengthBytes = encodeDerLength(s.length);
+  const rLengthField = encodeDerLength(r.length);
+  const sLengthField = encodeDerLength(s.length);
   const sequenceLength =
-    1 + rLengthBytes.length + r.length + 1 + sLengthBytes.length + s.length;
-  const sequenceLengthBytes = encodeDerLength(sequenceLength);
-  const der = new Uint8Array(1 + sequenceLengthBytes.length + sequenceLength);
+    1 + rLengthField.length + r.length + 1 + sLengthField.length + s.length;
+  const sequenceLengthField = encodeDerLength(sequenceLength);
+  const der = new Uint8Array(1 + sequenceLengthField.length + sequenceLength);
   let offset = 0;
 
   der[offset++] = 0x30;
-  der.set(sequenceLengthBytes, offset);
-  offset += sequenceLengthBytes.length;
+  der.set(sequenceLengthField, offset);
+  offset += sequenceLengthField.length;
   der[offset++] = 0x02;
-  der.set(rLengthBytes, offset);
-  offset += rLengthBytes.length;
+  der.set(rLengthField, offset);
+  offset += rLengthField.length;
   der.set(r, offset);
   offset += r.length;
   der[offset++] = 0x02;
-  der.set(sLengthBytes, offset);
-  offset += sLengthBytes.length;
+  der.set(sLengthField, offset);
+  offset += sLengthField.length;
   der.set(s, offset);
 
   return der;
@@ -384,6 +384,26 @@ function prependZero(bytes: Uint8Array): Uint8Array {
   result[0] = 0;
   result.set(bytes, 1);
   return result;
+}
+
+function encodeDerLength(length: number): Uint8Array {
+  if (length < 0) {
+    throw new Error("DER length cannot be negative");
+  }
+
+  if (length < 0x80) {
+    return Uint8Array.of(length);
+  }
+
+  const bytes: number[] = [];
+  let remaining = length;
+
+  while (remaining > 0) {
+    bytes.unshift(remaining & 0xff);
+    remaining >>= 8;
+  }
+
+  return Uint8Array.of(0x80 | bytes.length, ...bytes);
 }
 
 function isAudienceValid(aud: AccessPayload["aud"], expected: string): boolean {
