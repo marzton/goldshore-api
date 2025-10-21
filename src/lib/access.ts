@@ -21,6 +21,18 @@ const ACCESS_ISSUER = "https://goldshore.cloudflareaccess.com";
 const ACCESS_JWKS_URL = `${ACCESS_ISSUER}/cdn-cgi/access/certs`;
 const JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
 
+export interface AccessEnvironment {
+  ACCESS_AUDIENCE?: string;
+  ACCESS_ISSUER?: string;
+  ACCESS_JWKS_URL?: string;
+}
+
+interface AccessConfig {
+  audience: string;
+  issuer: string;
+  jwksUrl: string;
+}
+
 type AccessHeader = {
   kid?: string;
   alg?: string;
@@ -41,9 +53,10 @@ type AccessJwk = JsonWebKey & {
   crv?: string;
   alg?: string;
 };
+type AccessJwk = JsonWebKey & { kid?: string; kty?: string; crv?: string };
 
 type SupportedImportParams =
-  | { name: "RSASSA-PKCS1-v1_5"; hash: { name: HashName } }
+  | { name: "RSASSA-PKCS1-v1_5"; hash: { name: "SHA-256" } }
   | { name: "ECDSA"; namedCurve: EcNamedCurve };
 
 type VerifyParams =
@@ -87,10 +100,14 @@ let cachedKeys: Map<string, CachedKeyEntry> = new Map();
 let cacheExpiresAt = 0;
 let inflightFetch: Promise<void> | null = null;
 
-export async function requireAccess(req: Request): Promise<boolean> {
+const ALLOWED_ALGORITHMS = new Set(["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]);
+const keyCaches = new Map<string, KeyCache>();
+
+export async function requireAccess(req: Request, env?: AccessEnvironment): Promise<boolean> {
   const jwt = req.headers.get("CF-Access-Jwt-Assertion");
   if (!jwt) return false;
 
+  const config = resolveConfig(env);
   const parts = jwt.split(".");
   if (parts.length !== 3) return false;
 
@@ -112,8 +129,9 @@ export async function requireAccess(req: Request): Promise<boolean> {
   if (!header.alg) return false;
 
   if (!payload || !isAudienceValid(payload.aud)) return false;
+  if (!payload || !isAudienceValid(payload.aud, config.audience)) return false;
   if (!payload.exp || payload.exp * 1000 <= Date.now()) return false;
-  if (payload.iss !== ACCESS_ISSUER) return false;
+  if (!payload.iss || normalizeIssuer(payload.iss) !== config.issuer) return false;
 
   const algorithmDetails = getAlgorithmDetails(header.alg);
   if (!algorithmDetails) return false;
@@ -121,6 +139,7 @@ export async function requireAccess(req: Request): Promise<boolean> {
   let key: CryptoKey | undefined;
   try {
     key = await getKey(header.kid, algorithmDetails);
+    key = await getKey(header.kid, config);
   } catch (error) {
     console.error("failed to load access signing keys", error);
     return false;
@@ -131,6 +150,7 @@ export async function requireAccess(req: Request): Promise<boolean> {
   const encoder = new TextEncoder();
   const data = encoder.encode(`${parts[0]}.${parts[1]}`);
   const verifyParams = getVerifyParams(algorithmDetails);
+  const signature = base64UrlToUint8Array(parts[2]);
 
   try {
     let signature = base64UrlToUint8Array(parts[2]);
@@ -139,6 +159,7 @@ export async function requireAccess(req: Request): Promise<boolean> {
       signature = joseToDerSignature(signature);
     }
 
+  try {
     return await crypto.subtle.verify(verifyParams, key, signature, data);
   } catch (error) {
     console.error("access token verification failed", error);
@@ -178,12 +199,20 @@ async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | un
   }
 
   return undefined;
+  if (cache.expiresAt > Date.now() && cache.keys.has(kid)) {
+    return cache.keys.get(kid);
+  }
+
+  const forceReload = !cache.keys.has(kid);
+  await loadJwks(cache, config, forceReload);
+  return cache.keys.get(kid);
 }
 
 function getCache(url: string): KeyCache {
   let cache = keyCaches.get(url);
   if (!cache) {
     cache = { keys: new Map(), expiresAt: 0, inflight: null, missing: new Map() };
+    cache = { keys: new Map(), expiresAt: 0, inflight: null };
     keyCaches.set(url, cache);
   }
   return cache;
@@ -191,6 +220,8 @@ function getCache(url: string): KeyCache {
 
 async function loadJwks(cache: KeyCache, config: AccessConfig, force = false): Promise<void> {
   if (!force && cache.expiresAt > Date.now() && cache.keys.size > 0) {
+async function loadJwks(cache: KeyCache, config: AccessConfig, forceReload = false): Promise<void> {
+  if (!forceReload && cache.expiresAt > Date.now() && cache.keys.size > 0) {
     return;
   }
 
@@ -723,6 +754,13 @@ function rsaHash(alg: string | undefined): HashName {
     default:
       return "SHA-256";
   }
+  let end = value.length;
+
+  while (end > 0 && value.charCodeAt(end - 1) === 47 /* '/' */) {
+    end -= 1;
+  }
+
+  return end === value.length ? value : value.slice(0, end);
 }
 
 export default requireAccess;
