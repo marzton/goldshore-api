@@ -1,53 +1,71 @@
 import type { Env } from "../types";
 
-const ALLOWED_METHODS = "GET,POST,DELETE,OPTIONS";
-const ALLOWED_HEADERS = "Authorization,Content-Type,CF-Access-Jwt-Assertion";
+const DEFAULT_ALLOW_HEADERS = [
+  "Authorization",
+  "Content-Type",
+  "Cf-Access-Jwt-Assertion",
+  "Cf-Access-Authenticated-User-Email"
+].join(",");
 
-const escapeRegex = (value: string) => value.replace(/[-/\\^$+?.()|[\]{}]/g, "\\$&");
+export function corsHeaders(env: Env, req: Request): Headers {
+  const origin = req.headers.get("Origin") ?? "";
+  const allowList = parseOrigins(env.CORS_ORIGINS);
+  const headers = new Headers({
+    "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+    "Access-Control-Allow-Headers": env.CORS_ALLOW_HEADERS ?? DEFAULT_ALLOW_HEADERS,
+    "Access-Control-Max-Age": env.CORS_MAX_AGE ?? "86400",
+    "Vary": "Origin",
+    "Access-Control-Expose-Headers": "Cf-Access-Authenticated-User-Email"
+  });
 
-type OriginRule =
-  | { type: "wildcard" }
-  | { type: "exact"; value: string }
-  | { type: "pattern"; regex: RegExp };
-
-const createOriginRule = (pattern: string): OriginRule | null => {
-  const value = pattern.trim();
-  if (!value) return null;
-  if (value === "*") return { type: "wildcard" };
-  if (!value.includes("*")) return { type: "exact", value };
-  const regex = new RegExp(`^${escapeRegex(value).replace(/\\\*/g, ".*")}$`);
-  return { type: "pattern", regex };
-};
-
-const buildAllowedOrigins = (allow: string): OriginRule[] =>
-  allow
-    .split(",")
-    .map(createOriginRule)
-    .filter((rule): rule is OriginRule => Boolean(rule));
-
-const resolveAllowedOrigin = (origin: string, allow: OriginRule[]) => {
-  for (const rule of allow) {
-    if (rule.type === "wildcard") return "*";
-    if (!origin) continue;
-    if (rule.type === "exact" && origin === rule.value) return origin;
-    if (rule.type === "pattern" && rule.regex.test(origin)) return origin;
+  if (origin && isOriginAllowed(origin, allowList)) {
+    headers.set("Access-Control-Allow-Origin", origin);
+    if (env.CORS_ALLOW_CREDENTIALS !== "false") {
+      headers.set("Access-Control-Allow-Credentials", "true");
+    }
   }
-  return null;
-};
 
-export function corsHeaders(env: Env, req: Request): HeadersInit {
-  const origin = req.headers.get("Origin") || "";
-  const allowed = buildAllowedOrigins(env.CORS_ALLOWED_ORIGINS || "");
-  const headers: Record<string, string> = {
-    "Access-Control-Allow-Methods": ALLOWED_METHODS,
-    "Access-Control-Allow-Headers": ALLOWED_HEADERS,
-    "Access-Control-Max-Age": "86400",
-    Vary: "Origin"
-  };
-  const allowedOrigin = resolveAllowedOrigin(origin, allowed);
-  if (allowedOrigin) {
-    headers["Access-Control-Allow-Origin"] = allowedOrigin;
-    if (allowedOrigin === "*") delete headers.Vary;
-  }
   return headers;
+}
+
+function parseOrigins(origins?: string): string[] {
+  if (!origins) return [];
+  return origins
+    .split(",")
+    .map(value => value.trim())
+    .filter(Boolean);
+}
+
+function isOriginAllowed(origin: string, allowList: string[]): boolean {
+  if (!allowList.length) return false;
+
+  try {
+    const url = new URL(origin);
+    return allowList.some(pattern => matchesPattern(url, pattern));
+  } catch (_err) {
+    return false;
+  }
+}
+
+function matchesPattern(url: URL, pattern: string): boolean {
+  if (!pattern.includes("*")) {
+    return `${url.protocol}//${url.host}`.toLowerCase() === pattern.toLowerCase();
+  }
+
+  const hasProtocol = pattern.includes("://");
+  let protocol = "";
+  let hostPattern = pattern;
+
+  if (hasProtocol) {
+    const [protoPart, hostPart] = pattern.split("://", 2);
+    protocol = protoPart.toLowerCase();
+    hostPattern = hostPart;
+  }
+
+  if (protocol && url.protocol.replace(":", "").toLowerCase() !== protocol) {
+    return false;
+  }
+
+  const regex = new RegExp(`^${hostPattern.replace(/\./g, "\\.").replace(/\*/g, ".*")}$`, "i");
+  return regex.test(url.host);
 }
