@@ -375,6 +375,11 @@ function curveHash(curve: EcNamedCurve | undefined): HashName {
 
 function normalizeIssuer(value: string): string {
   let end = value.length;
+
+  while (end > 0 && value.charCodeAt(end - 1) === 0x2f) {
+    end -= 1;
+  }
+
   while (end > 0 && value.charCodeAt(end - 1) === 0x2f /* '/' */) {
     end -= 1;
   }
