@@ -1,9 +1,16 @@
+import {
+  ensureSubscriptionEndsAt,
+  hasSubscriptionExpired,
+  normalizeSubscriptionEndsAt,
+} from "@/lib/utils/subscription";
+
 export const CUSTOMER_QUERIES = {
   BASE_SELECT: `
-    SELECT 
+    SELECT
       customers.*,
       customer_subscriptions.id as subscription_id,
       customer_subscriptions.status as subscription_status,
+      customer_subscriptions.subscription_ends_at as subscription_ends_at,
       subscriptions.name as subscription_name,
       subscriptions.description as subscription_description,
       subscriptions.price as subscription_price
@@ -15,8 +22,13 @@ export const CUSTOMER_QUERIES = {
   `,
   INSERT_CUSTOMER: `INSERT INTO customers (name, email, notes) VALUES (?, ?, ?)`,
   INSERT_CUSTOMER_SUBSCRIPTION: `
-    INSERT INTO customer_subscriptions (customer_id, subscription_id, status) 
-    VALUES (?, ?, ?)
+    INSERT INTO customer_subscriptions (
+      customer_id,
+      subscription_id,
+      status,
+      subscription_ends_at
+    )
+    VALUES (?, ?, ?, ?)
   `,
   GET_BY_ID: `WHERE customers.id = ?`,
   GET_BY_EMAIL: `WHERE customers.email = ?`,
@@ -29,9 +41,17 @@ const processCustomerResults = (rows: any[]) => {
     if (!customersMap.has(row.id)) {
       const customer = { ...row };
       if (row.subscription_id) {
+        const subscriptionEndsAt = normalizeSubscriptionEndsAt(
+          row.subscription_ends_at,
+        );
+        const status = hasSubscriptionExpired(row.subscription_ends_at)
+          ? "expired"
+          : row.subscription_status;
+
         customer.subscription = {
           id: row.subscription_id,
-          status: row.subscription_status,
+          status,
+          ends_at: subscriptionEndsAt,
           name: row.subscription_name,
           description: row.subscription_description,
           price: row.subscription_price,
@@ -40,6 +60,7 @@ const processCustomerResults = (rows: any[]) => {
       // Clean up raw join fields
       delete customer.subscription_id;
       delete customer.subscription_status;
+      delete customer.subscription_ends_at;
       delete customer.subscription_name;
       delete customer.subscription_description;
       delete customer.subscription_price;
@@ -97,6 +118,7 @@ export class CustomerService {
     subscription?: {
       id: number;
       status: string;
+      ends_at?: string | number | Date | null;
     };
   }) {
     const { name, email, notes, subscription } = customerData;
@@ -117,7 +139,12 @@ export class CustomerService {
       const subscriptionResponse = await this.DB.prepare(
         CUSTOMER_QUERIES.INSERT_CUSTOMER_SUBSCRIPTION,
       )
-        .bind(customerId, subscription.id, subscription.status)
+        .bind(
+          customerId,
+          subscription.id,
+          subscription.status,
+          ensureSubscriptionEndsAt(subscription.ends_at),
+        )
         .run();
 
       if (!subscriptionResponse.success) {
