@@ -91,6 +91,11 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
     return false;
   }
 
+  let signature: Uint8Array | null = null;
+  try {
+    signature = base64UrlToUint8Array(parts[2]);
+  } catch (error) {
+    console.error("invalid access token signature", error);
   const signature = (() => {
     try {
       return base64UrlToUint8Array(parts[2]);
@@ -99,6 +104,10 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
       return null;
     }
   })();
+
+  if (!signature) {
+    return false;
+  }
 
   if (!signature) {
     return false;
