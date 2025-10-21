@@ -385,6 +385,15 @@ function normalizeIssuer(value: string): string {
   }
 
   return value.slice(0, end);
+  while (end > 0 && value.charCodeAt(end - 1) === 0x2f) {
+    end -= 1;
+  }
+
+  if (end === value.length) {
+    return value;
+  }
+
+  return value.slice(0, end);
 }
 
 export default requireAccess;
