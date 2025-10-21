@@ -47,13 +47,7 @@ type AccessPayload = {
 type HashName = "SHA-256" | "SHA-384" | "SHA-512";
 type EcNamedCurve = "P-256" | "P-384" | "P-521";
 
-type AccessJwk = JsonWebKey & {
-  kid?: string;
-  kty?: string;
-  crv?: string;
-  alg?: string;
-};
-type AccessJwk = JsonWebKey & { kid?: string; kty?: string; crv?: string };
+type AccessJwk = JsonWebKey & { kid?: string; kty?: string; crv?: string; alg?: string };
 
 type SupportedImportParams =
   | { name: "RSASSA-PKCS1-v1_5"; hash: { name: HashName } }
@@ -185,6 +179,11 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
     return false;
   }
 
+  const normalizedSignature = normalizeSignature(signature, key, verifyParams);
+  if (!normalizedSignature) {
+    return false;
+  }
+
   try {
     return await crypto.subtle.verify(verifyParams, key, normalizedSignature, data);
   } catch (error) {
@@ -229,20 +228,12 @@ async function getKey(
   }
 
   return undefined;
-  if (cache.expiresAt > Date.now() && cache.keys.has(kid)) {
-    return cache.keys.get(kid);
-  }
-
-  const forceReload = !cache.keys.has(kid);
-  await loadJwks(cache, config, forceReload);
-  return cache.keys.get(kid);
 }
 
 function getCache(url: string): KeyCache {
   let cache = keyCaches.get(url);
   if (!cache) {
     cache = { keys: new Map(), expiresAt: 0, inflight: null, missing: new Map() };
-    cache = { keys: new Map(), expiresAt: 0, inflight: null };
     keyCaches.set(url, cache);
   }
   return cache;
@@ -250,7 +241,6 @@ function getCache(url: string): KeyCache {
 
 async function loadJwks(cache: KeyCache, config: AccessConfig, force = false): Promise<void> {
   if (!force && cache.expiresAt > Date.now() && cache.keys.size > 0) {
-async function loadJwks(cache: KeyCache, config: AccessConfig, forceReload = false): Promise<void> {  if (!forceReload && cache.expiresAt > Date.now() && cache.keys.size > 0) {
     return;
   }
 
@@ -295,9 +285,6 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, forceReload = fal
       if (imported.size > 0) {
         cache.keys = imported;
         cache.expiresAt = Date.now() + JWKS_CACHE_TTL_MS;
-        for (const kid of imported.keys()) {
-          cache.missing.delete(kid);
-        }
         cache.missing.clear();
       } else if (cache.keys.size === 0) {
         cache.expiresAt = 0;
@@ -325,12 +312,7 @@ function resolveConfig(env?: AccessEnvironment): AccessConfig {
 
 function getImportAlgorithm(jwk: AccessJwk): SupportedImportParams | null {
   if (jwk.kty === "RSA") {
-    const hashName = rsaHashForAlgorithm(jwk.alg);
-    if (jwk.alg && !hashName) {
-      return null;
-    }
-
-    return { name: "RSASSA-PKCS1-v1_5", hash: { name: hashName ?? "SHA-256" } };
+    return { name: "RSASSA-PKCS1-v1_5", hash: { name: rsaHash(jwk.alg) } };
   }
 
   if (jwk.kty === "EC" && typeof jwk.crv === "string") {
@@ -341,6 +323,17 @@ function getImportAlgorithm(jwk: AccessJwk): SupportedImportParams | null {
   }
 
   return null;
+}
+
+function rsaHash(alg: string | undefined): HashName {
+  switch (alg) {
+    case "RS384":
+      return "SHA-384";
+    case "RS512":
+      return "SHA-512";
+    default:
+      return "SHA-256";
+  }
 }
 
 function getVerifyParams(key: CryptoKey): VerifyParams | null {
