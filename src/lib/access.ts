@@ -85,22 +85,21 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 
   if (!key) return false;
 
-  const encoder = new TextEncoder();
-  const data = encoder.encode(`${parts[0]}.${parts[1]}`);
-  const signature = base64UrlToUint8Array(parts[2]);
-
   const verifyParams = getVerifyParams(key);
   if (!verifyParams) {
     console.error("unsupported key algorithm", key.algorithm);
     return false;
   }
 
-  const normalizedSignature = normalizeSignature(signature, key, verifyParams);
-  if (!normalizedSignature) {
-    return false;
-  }
-
   try {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(`${parts[0]}.${parts[1]}`);
+    const signature = base64UrlToUint8Array(parts[2]);
+    const normalizedSignature = normalizeSignature(signature, key, verifyParams);
+    if (!normalizedSignature) {
+      return false;
+    }
+
     return await crypto.subtle.verify(verifyParams, key, normalizedSignature, data);
   } catch (error) {
     console.error("access token verification failed", error);
