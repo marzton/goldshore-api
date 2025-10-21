@@ -1,7 +1,8 @@
 import {
-  deriveSubscriptionStatus,
-  parseSubscriptionEndsAt,
-} from "@/lib/utils/subscription-status";
+  ensureSubscriptionEndsAt,
+  hasSubscriptionExpired,
+  normalizeSubscriptionEndsAt,
+} from "@/lib/utils/subscription";
 
 export const CUSTOMER_QUERIES = {
   BASE_SELECT: `
@@ -21,8 +22,13 @@ export const CUSTOMER_QUERIES = {
   `,
   INSERT_CUSTOMER: `INSERT INTO customers (name, email, notes) VALUES (?, ?, ?)`,
   INSERT_CUSTOMER_SUBSCRIPTION: `
-    INSERT INTO customer_subscriptions (customer_id, subscription_id, status) 
-    VALUES (?, ?, ?)
+    INSERT INTO customer_subscriptions (
+      customer_id,
+      subscription_id,
+      status,
+      subscription_ends_at
+    )
+    VALUES (?, ?, ?, ?)
   `,
   GET_BY_ID: `WHERE customers.id = ?`,
   GET_BY_EMAIL: `WHERE customers.email = ?`,
@@ -35,17 +41,17 @@ const processCustomerResults = (rows: any[]) => {
     if (!customersMap.has(row.id)) {
       const customer = { ...row };
       if (row.subscription_id) {
-        const subscriptionEndsAt = parseSubscriptionEndsAt(
+        const subscriptionEndsAt = normalizeSubscriptionEndsAt(
           row.subscription_ends_at,
         );
-        const derivedStatus = deriveSubscriptionStatus(
-          row.subscription_status,
-          row.subscription_ends_at,
-        );
+        const status = hasSubscriptionExpired(row.subscription_ends_at)
+          ? "expired"
+          : row.subscription_status;
 
         customer.subscription = {
           id: row.subscription_id,
-          status: derivedStatus,
+          status,
+          ends_at: subscriptionEndsAt,
           name: row.subscription_name,
           description: row.subscription_description,
           price: row.subscription_price,
@@ -113,6 +119,7 @@ export class CustomerService {
     subscription?: {
       id: number;
       status: string;
+      ends_at?: string | number | Date | null;
     };
   }) {
     const { name, email, notes, subscription } = customerData;
@@ -133,7 +140,12 @@ export class CustomerService {
       const subscriptionResponse = await this.DB.prepare(
         CUSTOMER_QUERIES.INSERT_CUSTOMER_SUBSCRIPTION,
       )
-        .bind(customerId, subscription.id, subscription.status)
+        .bind(
+          customerId,
+          subscription.id,
+          subscription.status,
+          ensureSubscriptionEndsAt(subscription.ends_at),
+        )
         .run();
 
       if (!subscriptionResponse.success) {
