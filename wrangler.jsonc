@@ -7,10 +7,53 @@
   "d1_databases": [{ "binding": "DB", "database_name": "goldshore_db", "database_id": "33b71eca-4987-4a0c-8721-c1c777b8b6a3" }],
   "r2_buckets": [{ "binding": "R2", "bucket_name": "goldshore-reports" }],
   "queues": { "producers": [{ "binding": "JOBS", "queue": "jobs" }] },
+  "compatibility_date": "2025-10-19",
+  "routes": [
+    {
+      "pattern": "api.goldshore.org/*",
+      "zone_name": "goldshore.org"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      // Production KV namespace for cached API responses.
+      // This value must point at the existing namespace; deployments fail if replaced with a placeholder.
+      "binding": "KV_CACHE",
+      // Keep this production namespace identifier in source control. There is
+      // no build step that injects it, so deployments rely on this exact ID.
+      "id": "578fc33519014f418bd9712c61f593db"
+    }
+  ],
+  "d1_databases": [
+    {
+      // Production D1 database backing the worker API.
+      // The database identifier is fixed in Cloudflare; do not replace it during config templating.
+      "binding": "DB",
+      "database_name": "goldshore_db",
+      // This binding is resolved directly from the configuration during
+      // deploys; using a placeholder would break the production worker.
+      "database_id": "33b71eca-4987-4a0c-8721-c1c777b8b6a3"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "R2",
+      "bucket_name": "goldshore-reports"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "JOBS",
+        "queue": "jobs"
+      }
+    ]
+  },
   "vars": {
     "ENV": "production",
     "CORS_ALLOWED_ORIGINS": "https://goldshore.org,https://web.goldshore.org,https://admin.goldshore.org,https://*.pages.dev,http://localhost:5173",
     "QUOTES_MAX_AGE": "30",
-    "NEWS_MAX_AGE": "300"
+    "NEWS_MAX_AGE": "300",
+    "AGENT_SYSTEM_PROMPT": ""
   }
 }
