@@ -77,6 +77,7 @@ const RSA_ALGORITHM_HASH: Record<"RS256" | "RS384" | "RS512", HashName> = {
   RS512: "SHA-512",
 };
 const keyCaches = new Map<string, KeyCache>();
+const NEGATIVE_CACHE_TTL_MS = 60 * 1000;
 
 export async function requireAccess(req: Request, env?: AccessEnvironment): Promise<boolean> {
   const jwt = req.headers.get("CF-Access-Jwt-Assertion");
@@ -211,6 +212,9 @@ export async function requireAccess(req: Request): Promise<boolean> {
     return false;
   }
 
+  const normalizedSignature =
+    verifyParams.name === "ECDSA" ? convertJoseSignatureToDer(signature) : signature;
+
   try {
     return await crypto.subtle.verify(verifyParams, key, normalizedSignature, data);
   } catch (error) {
@@ -225,6 +229,8 @@ async function getKey(
   config: AccessConfig,
 ): Promise<CryptoKey | undefined> {
   const cache = getCache(config.jwksUrl);
+  const cacheKey = getCacheKey(kid, alg);
+  const isRsa = RSA_HASH_BY_ALG.has(alg);
 
   const now = Date.now();
   const cacheValid = cache.expiresAt > now;
@@ -430,6 +436,51 @@ function base64UrlToUint8Array(value: string): Uint8Array {
   return bytes;
 }
 
+function convertJoseSignatureToDer(signature: Uint8Array): Uint8Array {
+  const midpoint = signature.length / 2;
+  let r = trimLeadingZeros(signature.slice(0, midpoint));
+  let s = trimLeadingZeros(signature.slice(midpoint));
+
+  if (r[0] & 0x80) {
+    r = prependZero(r);
+  }
+
+  if (s[0] & 0x80) {
+    s = prependZero(s);
+  }
+
+  const derLength = 2 + r.length + 2 + s.length;
+  const der = new Uint8Array(2 + derLength);
+  let offset = 0;
+
+  der[offset++] = 0x30;
+  der[offset++] = derLength;
+  der[offset++] = 0x02;
+  der[offset++] = r.length;
+  der.set(r, offset);
+  offset += r.length;
+  der[offset++] = 0x02;
+  der[offset++] = s.length;
+  der.set(s, offset);
+
+  return der;
+}
+
+function trimLeadingZeros(bytes: Uint8Array): Uint8Array {
+  let start = 0;
+  while (start < bytes.length - 1 && bytes[start] === 0) {
+    start += 1;
+  }
+  return bytes.slice(start);
+}
+
+function prependZero(bytes: Uint8Array): Uint8Array {
+  const result = new Uint8Array(bytes.length + 1);
+  result[0] = 0;
+  result.set(bytes, 1);
+  return result;
+}
+
 function isAudienceValid(aud: AccessPayload["aud"], expected: string): boolean {
   if (!aud) return false;
   if (typeof aud === "string") return aud === expected;
@@ -594,7 +645,13 @@ function rsaHashForJwk(jwk: AccessJwk): HashName | null {
 }
 
 function normalizeIssuer(value: string): string {
-  return value.replace(/\/+$/, "");
+  let end = value.length;
+
+  while (end > 0 && value.charCodeAt(end - 1) === 47 /* '/' */) {
+    end -= 1;
+  }
+
+  return end === value.length ? value : value.slice(0, end);
 }
 
 export default requireAccess;
