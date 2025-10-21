@@ -96,6 +96,8 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
     signature = base64UrlToUint8Array(parts[2]);
   } catch (error) {
     console.error("invalid access token signature", error);
+    return false;
+  }
   const signature = (() => {
     try {
       return base64UrlToUint8Array(parts[2]);
@@ -385,10 +387,15 @@ function curveHash(curve: EcNamedCurve | undefined): HashName {
 
 function normalizeIssuer(value: string): string {
   let end = value.length;
+
   while (end > 0 && value.charCodeAt(end - 1) === 0x2f) {
     end -= 1;
   }
 
+  while (end > 0 && value.charCodeAt(end - 1) === 0x2f /* '/' */) {
+    end -= 1;
+  }
+  return end === value.length ? value : value.slice(0, end);
   if (end === value.length) {
     return value;
   }
