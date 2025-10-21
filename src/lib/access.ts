@@ -380,6 +380,9 @@ function normalizeIssuer(value: string): string {
     end -= 1;
   }
 
+  while (end > 0 && value.charCodeAt(end - 1) === 0x2f /* '/' */) {
+    end -= 1;
+  }
   return end === value.length ? value : value.slice(0, end);
 }
 
