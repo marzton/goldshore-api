@@ -91,6 +91,14 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
     return false;
   }
 
+  let signature: Uint8Array;
+  try {
+    signature = base64UrlToUint8Array(parts[2]);
+  } catch (error) {
+    console.error("invalid access token signature", error);
+    return false;
+  }
+
   const normalizedSignature = normalizeSignature(signature, key, verifyParams);
   if (!normalizedSignature) {
     return false;
@@ -99,11 +107,6 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
   try {
     const encoder = new TextEncoder();
     const data = encoder.encode(`${parts[0]}.${parts[1]}`);
-    const signature = base64UrlToUint8Array(parts[2]);
-    const normalizedSignature = normalizeSignature(signature, key, verifyParams);
-    if (!normalizedSignature) {
-      return false;
-    }
 
     return await crypto.subtle.verify(verifyParams, key, normalizedSignature, data);
   } catch (error) {
