@@ -10,6 +10,7 @@
 | `@` | CNAME | `goldshore-web.pages.dev` | Proxied | Apex flattening keeps the record compatible with Pages |
 | `www` | CNAME | `goldshore-web.pages.dev` | Proxied | Canonical marketing hostname |
 | `web` | CNAME | `goldshore-web.pages.dev` | Proxied | Alternate marketing hostname |
+| `admin` | CNAME | `goldshore-admin.pages.dev` | Proxied | Admin console served via Cloudflare Pages + Access |
 | `api` | CNAME | `goldshore-api.gslabs.workers.dev` | Proxied | Worker production route |
 | `*` | (none) | — | — | Wildcard **not** configured; stray hosts must 404 |
 

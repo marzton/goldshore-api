@@ -11,6 +11,7 @@ Confirm the Cloudflare DNS table matches this worker-only baseline:
 
 | Type | Name | Target | Proxy | Verified |
 | ---- | ---- | ------ | ----- | -------- |
+| CNAME | admin | `goldshore-admin.pages.dev` | Proxied | [ ] |
 | CNAME | api | `workers.dev` | Proxied | [ ] |
 | MX/TXT | (existing) | (unchanged) | — | [ ] |
 
@@ -27,6 +28,7 @@ nslookup api.goldshore.org
 
 ## 4. Domain attachments
 - [ ] Cloudflare Worker service `GoldShore` has the route `api.goldshore.org/*`.
+- [ ] Cloudflare Worker service `GoldShore` exposes `goldshore-api.gslabs.workers.dev` for development/testing.
 
 ## 5. SSL/TLS
 - [ ] Cloudflare SSL/TLS mode is **Full (strict)**.
