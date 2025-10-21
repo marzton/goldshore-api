@@ -61,18 +61,14 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 
   let header: AccessHeader;
   let payload: AccessPayload;
-  let signature: Uint8Array | undefined;
+  let signature: Uint8Array;
 
   try {
     header = decodeSection<AccessHeader>(parts[0]);
     payload = decodeSection<AccessPayload>(parts[1]);
     signature = base64UrlToUint8Array(parts[2]);
   } catch (error) {
-    console.error("invalid access token", error);
-    return false;
-  }
-
-  if (!signature) {
+    console.error("invalid access token data", error);
     return false;
   }
 
@@ -103,14 +99,7 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
     return false;
   }
 
-  let normalizedSignature: Uint8Array | null;
-  try {
-    normalizedSignature = normalizeSignature(signature, key, verifyParams);
-  } catch (error) {
-    console.error("invalid access token signature", error);
-    return false;
-  }
-
+  const normalizedSignature = normalizeSignature(signature, key, verifyParams);
   if (!normalizedSignature) {
     return false;
   }
