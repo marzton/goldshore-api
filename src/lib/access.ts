@@ -41,6 +41,7 @@ type VerifyParams =
 
 type KeyCache = {
   keys: Map<string, CryptoKey>;
+  jwkByKid: Map<string, AccessJwk>;
   expiresAt: number;
   inflight: Promise<void> | null;
   missingKids: Map<string, number>;
@@ -79,7 +80,7 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 
   let key: CryptoKey | undefined;
   try {
-    key = await getKey(header.kid, config);
+    key = await getKey(header.kid, config, header.alg);
   } catch (error) {
     console.error("failed to load access signing keys", error);
     return false;
@@ -105,7 +106,11 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
   }
 }
 
-async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | undefined> {
+async function getKey(
+  kid: string,
+  config: AccessConfig,
+  alg?: string,
+): Promise<CryptoKey | undefined> {
   const cache = getCache(config.jwksUrl);
   const now = Date.now();
 
@@ -124,7 +129,8 @@ async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | un
     await loadJwks(cache, config);
   }
 
-  const key = cache.keys.get(kid);
+  let key = cache.keys.get(kid);
+  key = await ensureKeyForAlgorithm(cache, kid, key, alg);
 
   if (key) {
     cache.missingKids.delete(kid);
@@ -142,7 +148,13 @@ async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | un
 function getCache(url: string): KeyCache {
   let cache = keyCaches.get(url);
   if (!cache) {
-    cache = { keys: new Map(), expiresAt: 0, inflight: null, missingKids: new Map() };
+    cache = {
+      keys: new Map(),
+      jwkByKid: new Map(),
+      expiresAt: 0,
+      inflight: null,
+      missingKids: new Map(),
+    };
     keyCaches.set(url, cache);
   }
   return cache;
@@ -167,11 +179,13 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, forceReload = fal
       const body = await res.json<{ keys?: JsonWebKey[] }>();
       const keys = (body.keys ?? []) as AccessJwk[];
       const imported = new Map<string, CryptoKey>();
+      const jwkByKid = new Map<string, AccessJwk>();
 
       await Promise.all(
         keys.map(async (jwk) => {
           if (!jwk.kid) return;
 
+          jwkByKid.set(jwk.kid, jwk);
           const algorithm = getImportAlgorithm(jwk);
           if (!algorithm) return;
 
@@ -183,6 +197,10 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, forceReload = fal
           }
         }),
       );
+
+      if (jwkByKid.size > 0) {
+        cache.jwkByKid = jwkByKid;
+      }
 
       if (imported.size > 0) {
         cache.keys = imported;
@@ -212,10 +230,10 @@ function resolveConfig(env?: AccessEnvironment): AccessConfig {
   return { audience, issuer, jwksUrl };
 }
 
-function getImportAlgorithm(jwk: AccessJwk): SupportedImportParams | null {
+function getImportAlgorithm(jwk: AccessJwk, overrideHash?: HashName): SupportedImportParams | null {
   if (jwk.kty === "RSA") {
-    const hashName = rsaHashFromAlg(jwk.alg);
-    return { name: "RSASSA-PKCS1-v1_5", hash: { name: hashName ?? "SHA-256" } };
+    const hashName = overrideHash ?? rsaHashFromAlg(jwk.alg) ?? "SHA-256";
+    return { name: "RSASSA-PKCS1-v1_5", hash: { name: hashName } };
   }
 
   if (jwk.kty === "EC" && typeof jwk.crv === "string") {
@@ -226,6 +244,51 @@ function getImportAlgorithm(jwk: AccessJwk): SupportedImportParams | null {
   }
 
   return null;
+}
+
+async function ensureKeyForAlgorithm(
+  cache: KeyCache,
+  kid: string,
+  key: CryptoKey | undefined,
+  alg?: string,
+): Promise<CryptoKey | undefined> {
+  if (!key || !alg) {
+    return key;
+  }
+
+  const expectedHash = rsaHashFromAlg(alg);
+  if (!expectedHash) {
+    return key;
+  }
+
+  const algorithm = key.algorithm as { name?: string; hash?: { name?: string } };
+  if (algorithm.name !== "RSASSA-PKCS1-v1_5") {
+    return key;
+  }
+
+  const currentHash = algorithm.hash?.name?.toUpperCase();
+  if (currentHash === expectedHash) {
+    return key;
+  }
+
+  const jwk = cache.jwkByKid.get(kid);
+  if (!jwk) {
+    return key;
+  }
+
+  const importAlgorithm = getImportAlgorithm(jwk, expectedHash);
+  if (!importAlgorithm) {
+    return key;
+  }
+
+  try {
+    const cryptoKey = await crypto.subtle.importKey("jwk", jwk, importAlgorithm, false, ["verify"]);
+    cache.keys.set(kid, cryptoKey);
+    return cryptoKey;
+  } catch (error) {
+    console.error("failed to re-import jwk", kid, error);
+    return key;
+  }
 }
 
 function getVerifyParams(key: CryptoKey): VerifyParams | null {
