@@ -8,10 +8,10 @@ receive the same result without duplicating resources.
 
 | Component | Purpose | Desired State |
 | --- | --- | --- |
-| Cloudflare Worker `goldshore-api` | Serves API routes behind Access | Route `api.goldshore.org/*`, workers.dev enabled for smoke tests |
+| Cloudflare Worker `goldshore-agent` | Serves AI automation routes behind Access | Routes `api.goldshore.org/*`, `api.banproof.me/*`; workers.dev enabled for smoke tests |
 | Cloudflare Pages `goldshore-web` | Marketing + access-denied static assets | Custom domains `goldshore.org`, `www.goldshore.org`, `web.goldshore.org` |
 | Cloudflare Pages `goldshore-admin` | Astro-based admin console derived from Cloudflare's SaaS template | Protect behind Access; staging at `goldshore-admin.goldshore.workers.dev`, prod via `/admin` once cut over |
-| Cloudflare Access | Enforces SSO before any request touches Pages or the API | Unified `goldshore-admin` Access app covering staging + `api.goldshore.org`, requires Gold Shore email or GitHub login |
+| Cloudflare Access | Enforces SSO before any request touches Pages or the API | Unified `goldshore-admin` Access app covering staging + `api.goldshore.org`; BanProof alias read-only |
 | DNS (zone `goldshore.org`) | Routes traffic through Cloudflare with flattening | Apex + subdomains CNAME to Cloudflare-managed targets (see [Desired State](docs/desired-state.md)) |
 
 ## Local development
@@ -70,7 +70,7 @@ artifacts live in `apps/admin/dist/` and should be published through Pages once 
 ## Files of interest
 
 - [`wrangler.toml`](wrangler.toml) — deterministic worker configuration (routes, vars, compatibility date).
-- [`src/index.ts`](src/index.ts) — entry point implementing CORS, `/health`, and `/v1/whoami` with Access enforcement.
+- [`src/index.ts`](src/index.ts) — entry point implementing CORS, `/health`, `/status`, `/logs`, `/codex-agent`, `/autoapply`, and `/v1/whoami`.
 - [`src/lib/access.ts`](src/lib/access.ts) — Access JWT validation against Gold Shore Labs' JWKS.
 - [`public/access-denied.html`](public/access-denied.html) — Cloudflare Access identity failure landing page.
 - [`docs/desired-state.md`](docs/desired-state.md) — compliance summary of DNS, Access, and worker configuration.
