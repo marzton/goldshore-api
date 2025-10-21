@@ -1,4 +1,7 @@
 import {
+  ensureSubscriptionEndsAt,
+  hasSubscriptionExpired,
+  normalizeSubscriptionEndsAt,
   deriveSubscriptionStatus,
   resolveSubscriptionEndsAt,
 } from "@/lib/utils/subscription";
@@ -13,6 +16,8 @@ export const CUSTOMER_QUERIES = {
       subscriptions.name as subscription_name,
       subscriptions.description as subscription_description,
       subscriptions.price as subscription_price
+    FROM customers 
+    LEFT JOIN customer_subscriptions 
     FROM customers
     LEFT JOIN customer_subscriptions
       ON customers.id = customer_subscriptions.customer_id
@@ -21,6 +26,13 @@ export const CUSTOMER_QUERIES = {
   `,
   INSERT_CUSTOMER: `INSERT INTO customers (name, email, notes) VALUES (?, ?, ?)`,
   INSERT_CUSTOMER_SUBSCRIPTION: `
+    INSERT INTO customer_subscriptions (
+      customer_id,
+      subscription_id,
+      status,
+      subscription_ends_at
+    )
+    VALUES (?, ?, ?, ?)
     INSERT INTO customer_subscriptions (customer_id, subscription_id, status) 
     VALUES (?, ?, ?)
   `,
@@ -35,6 +47,21 @@ const processCustomerResults = (rows: any[]) => {
     if (!customersMap.has(row.id)) {
       const customer = { ...row };
       if (row.subscription_id) {
+        const subscriptionEndsAt = normalizeSubscriptionEndsAt(
+          row.subscription_ends_at,
+        );
+        const status = hasSubscriptionExpired(row.subscription_ends_at)
+          ? "expired"
+          : row.subscription_status;
+
+        customer.subscription = {
+          id: row.subscription_id,
+          status,
+          ends_at: subscriptionEndsAt,
+          name: row.subscription_name,
+          description: row.subscription_description,
+          price: row.subscription_price,
+          ends_at: subscriptionEndsAt ?? row.subscription_ends_at ?? null,
         const subscriptionEndsAt = resolveSubscriptionEndsAt(
           row.subscription_ends_at,
         );
@@ -111,6 +138,7 @@ export class CustomerService {
     subscription?: {
       id: number;
       status: string;
+      ends_at?: string | number | Date | null;
     };
   }) {
     const { name, email, notes, subscription } = customerData;
@@ -131,6 +159,12 @@ export class CustomerService {
       const subscriptionResponse = await this.DB.prepare(
         CUSTOMER_QUERIES.INSERT_CUSTOMER_SUBSCRIPTION,
       )
+        .bind(
+          customerId,
+          subscription.id,
+          subscription.status,
+          ensureSubscriptionEndsAt(subscription.ends_at),
+        )
         .bind(customerId, subscription.id, subscription.status)
         .run();
 
