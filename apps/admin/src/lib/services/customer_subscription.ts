@@ -1,4 +1,7 @@
 import {
+  deriveSubscriptionStatus,
+  parseSubscriptionEndsAt,
+} from "@/lib/utils/subscription-status";
   ensureSubscriptionEndsAt,
   hasSubscriptionExpired,
   normalizeSubscriptionEndsAt,
@@ -41,6 +44,19 @@ const processCustomerSubscriptionResults = (rows) => {
 
   rows.forEach((row) => {
     if (!subscriptionsMap.has(row.id)) {
+      const subscriptionEndsAt = parseSubscriptionEndsAt(
+        row.subscription_ends_at,
+      );
+      const derivedStatus = deriveSubscriptionStatus(
+        row.status,
+        row.subscription_ends_at,
+      );
+
+      const customerSubscription = {
+        id: row.id,
+        status: derivedStatus,
+        subscription_ends_at:
+          subscriptionEndsAt ?? row.subscription_ends_at ?? null,
       const subscriptionEndsAt = normalizeSubscriptionEndsAt(
         row.subscription_ends_at,
       );

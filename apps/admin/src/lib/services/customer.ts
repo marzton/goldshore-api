@@ -55,6 +55,7 @@ const processCustomerResults = (rows: any[]) => {
           name: row.subscription_name,
           description: row.subscription_description,
           price: row.subscription_price,
+          ends_at: subscriptionEndsAt ?? row.subscription_ends_at ?? null,
         };
       }
       // Clean up raw join fields
