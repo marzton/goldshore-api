@@ -1,3 +1,5 @@
+import { normalizeEcdsaSignature, type EcNamedCurve } from "./ecdsa";
+
 const DEFAULT_ACCESS_AUDIENCE = "d79c2b6106887967cfda1cbcea881399352402f5833084b7f3844cd29c205afa";
 const DEFAULT_ACCESS_ISSUER = "https://goldshore.cloudflareaccess.com";
 const JWKS_PATH = "/cdn-cgi/access/certs";
@@ -112,6 +114,18 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
     console.error("access token verification failed", error);
     return false;
   }
+}
+
+function normalizeSignature(
+  signature: Uint8Array,
+  key: CryptoKey,
+  verifyParams: VerifyParams,
+): Uint8Array | null {
+  if (verifyParams.name !== "ECDSA") {
+    return signature;
+  }
+
+  return normalizeEcdsaSignature(signature, key);
 }
 
 async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | undefined> {
@@ -326,7 +340,8 @@ function prependZero(bytes: Uint8Array): Uint8Array {
 function isAudienceValid(aud: AccessPayload["aud"], expected: string): boolean {
   if (!aud) return false;
   if (typeof aud === "string") return aud === expected;
-  return aud.includes(expected);
+  if (Array.isArray(aud)) return aud.includes(expected);
+  return false;
 }
 
 function normalizeSignature(signature: Uint8Array, key: CryptoKey, verifyParams: VerifyParams): Uint8Array | null {
