@@ -91,6 +91,11 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
     return false;
   }
 
+  const normalizedSignature = normalizeSignature(signature, key, verifyParams);
+  if (!normalizedSignature) {
+    return false;
+  }
+
   try {
     const encoder = new TextEncoder();
     const data = encoder.encode(`${parts[0]}.${parts[1]}`);
@@ -110,11 +115,13 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | undefined> {
   const cache = getCache(config.jwksUrl);
 
-  if (cache.expiresAt > Date.now() && cache.keys.has(kid)) {
+  const cacheValid = cache.expiresAt > Date.now();
+  if (cacheValid && cache.keys.has(kid)) {
     return cache.keys.get(kid);
   }
 
-  await loadJwks(cache, config);
+  const forceRefresh = cacheValid && !cache.keys.has(kid);
+  await loadJwks(cache, config, forceRefresh);
   return cache.keys.get(kid);
 }
 
@@ -127,8 +134,8 @@ function getCache(url: string): KeyCache {
   return cache;
 }
 
-async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
-  if (cache.expiresAt > Date.now() && cache.keys.size > 0) {
+async function loadJwks(cache: KeyCache, config: AccessConfig, force = false): Promise<void> {
+  if (!force && cache.expiresAt > Date.now() && cache.keys.size > 0) {
     return;
   }
 
