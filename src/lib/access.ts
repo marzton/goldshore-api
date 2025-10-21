@@ -125,12 +125,26 @@ async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | un
     forceRefresh = now >= nextAllowedRefresh;
   }
 
-  await loadJwks(cache, config, forceRefresh);
+  let refreshError: unknown | null = null;
+  try {
+    await loadJwks(cache, config, forceRefresh);
+  } catch (error) {
+    refreshError = error;
+  }
 
   const refreshedKey = cache.keys.get(kid);
   if (refreshedKey) {
     cache.missing.delete(kid);
     return refreshedKey;
+  }
+
+  if (refreshError) {
+    if (cachedKey) {
+      console.warn("failed to refresh jwks, falling back to cached key", refreshError);
+      cache.missing.delete(kid);
+      return cachedKey;
+    }
+    throw refreshError;
   }
 
   if (cache.expiresAt > now) {
