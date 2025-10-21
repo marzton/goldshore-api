@@ -135,7 +135,7 @@ async function getKey(
     return selectKey(cache.keys.get(kid), algorithm);
   }
 
-  await loadJwks(cache, config);
+  await loadJwks(cache, config, algorithm as HashAlgorithm | undefined);
   return selectKey(cache.keys.get(kid), algorithm);
 }
 
@@ -148,7 +148,11 @@ function getCache(url: string): KeyCache {
   return cache;
 }
 
-async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
+async function loadJwks(
+  cache: KeyCache,
+  config: AccessConfig,
+  requestedAlgorithm?: HashAlgorithm,
+): Promise<void> {
   if (cache.expiresAt > Date.now() && cache.keys.size > 0) {
     return;
   }
@@ -172,7 +176,7 @@ async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
         keys.map(async (jwk) => {
           if (!jwk.kid) return;
 
-          const importTasks = getImportTasks(jwk);
+          const importTasks = getImportTasks(jwk, requestedAlgorithm);
           if (importTasks.length === 0) return;
 
           try {
@@ -217,9 +221,9 @@ function resolveConfig(env?: AccessEnvironment): AccessConfig {
 
 type ImportTask = { params: SupportedImportParams; algorithms: string[] };
 
-function getImportTasks(jwk: AccessJwk): ImportTask[] {
+function getImportTasks(jwk: AccessJwk, requestedAlgorithm?: HashAlgorithm): ImportTask[] {
   if (jwk.kty === "RSA") {
-    const algorithms = getRsaAlgorithms(jwk);
+    const algorithms = getRsaAlgorithms(jwk, requestedAlgorithm);
     return algorithms.map((alg) => ({
       params: { name: "RSASSA-PKCS1-v1_5", hash: { name: RSA_HASH_ALGORITHMS[alg] } },
       algorithms: [alg],
@@ -242,15 +246,43 @@ function getImportTasks(jwk: AccessJwk): ImportTask[] {
   return [];
 }
 
-function getRsaAlgorithms(jwk: AccessJwk): RsaAlgorithm[] {
+function getRsaAlgorithms(jwk: AccessJwk, requestedAlgorithm?: HashAlgorithm): RsaAlgorithm[] {
   const supported: RsaAlgorithm[] = ["RS256", "RS384", "RS512"];
-  const jwkAlg = typeof jwk.alg === "string" ? (jwk.alg.toUpperCase() as HashAlgorithm) : undefined;
+  const normalizedRequested = toRsaAlgorithm(requestedAlgorithm);
+  const normalizedJwkAlg = toRsaAlgorithm(typeof jwk.alg === "string" ? jwk.alg : undefined);
 
-  if (jwkAlg && supported.includes(jwkAlg as RsaAlgorithm)) {
-    return [jwkAlg as RsaAlgorithm];
+  const algorithms = new Set<RsaAlgorithm>();
+
+  if (normalizedRequested) {
+    algorithms.add(normalizedRequested);
   }
 
-  return supported;
+  if (normalizedJwkAlg) {
+    algorithms.add(normalizedJwkAlg);
+  }
+
+  if (algorithms.size === 0) {
+    for (const algorithm of supported) {
+      algorithms.add(algorithm);
+    }
+  }
+
+  return Array.from(algorithms.values());
+}
+
+function toRsaAlgorithm(value: string | undefined): RsaAlgorithm | undefined {
+  if (!value) return undefined;
+
+  switch (value.toUpperCase()) {
+    case "RS256":
+      return "RS256";
+    case "RS384":
+      return "RS384";
+    case "RS512":
+      return "RS512";
+    default:
+      return undefined;
+  }
 }
 
 function storeImportedKey(
