@@ -180,6 +180,11 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
     return false;
   }
 
+  const normalizedSignature = normalizeSignature(signature, key, verifyParams);
+  if (!normalizedSignature) {
+    return false;
+  }
+
   try {
     return await crypto.subtle.verify(verifyParams, key, normalizedSignature, data);
   } catch (error) {
