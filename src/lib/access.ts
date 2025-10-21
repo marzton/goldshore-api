@@ -96,6 +96,16 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
     signature = base64UrlToUint8Array(parts[2]);
   } catch (error) {
     console.error("invalid access token signature", error);
+  const signature = (() => {
+    try {
+      return base64UrlToUint8Array(parts[2]);
+    } catch (error) {
+      console.error("invalid access token signature", error);
+      return null;
+    }
+  })();
+
+  if (!signature) {
     return false;
   }
 
@@ -374,7 +384,25 @@ function curveHash(curve: EcNamedCurve | undefined): HashName {
 }
 
 function normalizeIssuer(value: string): string {
-  return value.replace(/\/+$/, "");
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 0x2f) {
+    end -= 1;
+  }
+
+  if (end === value.length) {
+    return value;
+  }
+
+  return value.slice(0, end);
+  while (end > 0 && value.charCodeAt(end - 1) === 0x2f) {
+    end -= 1;
+  }
+
+  if (end === value.length) {
+    return value;
+  }
+
+  return value.slice(0, end);
 }
 
 export default requireAccess;
