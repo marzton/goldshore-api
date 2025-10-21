@@ -15,6 +15,14 @@ export type Customer = {
   notes: string;
   created_at: string;
   updated_at: string;
+  subscription?: {
+    id: number;
+    status: string;
+    name: string;
+    description: string;
+    price: number;
+    ends_at: number | null;
+  };
 };
 
 const columnHelper = createColumnHelper<Customer>();
@@ -48,6 +56,22 @@ const columns: ColumnDef<Customer>[] = [
   columnHelper.accessor("subscription.status", {
     header: "Subscription",
     cell: (info) => info.getValue(),
+  columnHelper.accessor((row) => row.subscription?.status ?? null, {
+    id: "subscription.status",
+    header: "Subscription",
+    cell: (info) => {
+      const subscription = info.row.original.subscription;
+
+      if (!subscription) {
+        return "—";
+      }
+
+      if (subscription.status === "expired" && subscription.ends_at) {
+        return `${subscription.status} (${new Date(subscription.ends_at).toLocaleDateString()})`;
+      }
+
+      return subscription.status;
+    },
   }),
   columnHelper.accessor("created_at", {
     header: "Created At",

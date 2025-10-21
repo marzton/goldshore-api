@@ -5,6 +5,7 @@ import {
   ensureSubscriptionEndsAt,
   hasSubscriptionExpired,
   normalizeSubscriptionEndsAt,
+  resolveSubscriptionEndsAt,
 } from "@/lib/utils/subscription";
 
 export const CUSTOMER_SUBSCRIPTION_QUERIES = {
@@ -49,6 +50,7 @@ const processCustomerSubscriptionResults = (rows) => {
       );
       const derivedStatus = deriveSubscriptionStatus(
         row.status,
+      const subscriptionEndsAt = resolveSubscriptionEndsAt(
         row.subscription_ends_at,
       );
 
@@ -67,6 +69,7 @@ const processCustomerSubscriptionResults = (rows) => {
       const customerSubscription = {
         id: row.id,
         status,
+        status: deriveSubscriptionStatus(row.status, subscriptionEndsAt),
         subscription_ends_at: subscriptionEndsAt,
         customer: {
           id: row.customer_id,
@@ -140,6 +143,13 @@ export class CustomerSubscriptionService {
       CUSTOMER_SUBSCRIPTION_QUERIES.INSERT_CUSTOMER_SUBSCRIPTION,
     )
       .bind(customer_id, subscription_id, status, normalizedEndsAt)
+      subscription_ends_at = Date.now() + 60 * 60 * 24 * 30, // 30 days from now by default
+    } = customerSubscriptionData;
+
+    const response = await this.DB.prepare(
+      CUSTOMER_SUBSCRIPTION_QUERIES.INSERT_CUSTOMER_SUBSCRIPTION,
+    )
+      .bind(customer_id, subscription_id, status, subscription_ends_at)
       .run();
 
     if (!response.success) {
@@ -173,6 +183,10 @@ export class CustomerSubscriptionService {
       CUSTOMER_SUBSCRIPTION_QUERIES.UPDATE_SUBSCRIPTION_ENDS_AT,
     )
       .bind(normalizedEndsAt, id)
+    const response = await this.DB.prepare(
+      CUSTOMER_SUBSCRIPTION_QUERIES.UPDATE_SUBSCRIPTION_ENDS_AT,
+    )
+      .bind(subscriptionEndsAt, id)
       .run();
 
     if (!response.success) {

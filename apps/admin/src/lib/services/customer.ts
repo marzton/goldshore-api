@@ -2,6 +2,8 @@ import {
   ensureSubscriptionEndsAt,
   hasSubscriptionExpired,
   normalizeSubscriptionEndsAt,
+  deriveSubscriptionStatus,
+  resolveSubscriptionEndsAt,
 } from "@/lib/utils/subscription";
 
 export const CUSTOMER_QUERIES = {
@@ -16,6 +18,8 @@ export const CUSTOMER_QUERIES = {
       subscriptions.price as subscription_price
     FROM customers 
     LEFT JOIN customer_subscriptions 
+    FROM customers
+    LEFT JOIN customer_subscriptions
       ON customers.id = customer_subscriptions.customer_id
     LEFT JOIN subscriptions
       ON customer_subscriptions.subscription_id = subscriptions.id
@@ -29,6 +33,8 @@ export const CUSTOMER_QUERIES = {
       subscription_ends_at
     )
     VALUES (?, ?, ?, ?)
+    INSERT INTO customer_subscriptions (customer_id, subscription_id, status) 
+    VALUES (?, ?, ?)
   `,
   GET_BY_ID: `WHERE customers.id = ?`,
   GET_BY_EMAIL: `WHERE customers.email = ?`,
@@ -56,6 +62,19 @@ const processCustomerResults = (rows: any[]) => {
           description: row.subscription_description,
           price: row.subscription_price,
           ends_at: subscriptionEndsAt ?? row.subscription_ends_at ?? null,
+        const subscriptionEndsAt = resolveSubscriptionEndsAt(
+          row.subscription_ends_at,
+        );
+        customer.subscription = {
+          id: row.subscription_id,
+          status: deriveSubscriptionStatus(
+            row.subscription_status,
+            subscriptionEndsAt,
+          ),
+          name: row.subscription_name,
+          description: row.subscription_description,
+          price: row.subscription_price,
+          ends_at: subscriptionEndsAt,
         };
       }
       // Clean up raw join fields
@@ -146,6 +165,7 @@ export class CustomerService {
           subscription.status,
           ensureSubscriptionEndsAt(subscription.ends_at),
         )
+        .bind(customerId, subscription.id, subscription.status)
         .run();
 
       if (!subscriptionResponse.success) {
