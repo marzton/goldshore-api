@@ -44,6 +44,7 @@ type KeyCache = {
   jwks: Map<string, AccessJwk>;
   expiresAt: number;
   inflight: Promise<void> | null;
+  missing: Map<string, number>;
 };
 
 const ALLOWED_ALGORITHMS = new Set(["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]);
@@ -144,8 +145,8 @@ function getCache(url: string): KeyCache {
   return cache;
 }
 
-async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
-  if (cache.expiresAt > Date.now() && cache.keys.size > 0) {
+async function loadJwks(cache: KeyCache, config: AccessConfig, force = false): Promise<void> {
+  if (!force && cache.expiresAt > Date.now() && cache.keys.size > 0) {
     return;
   }
 
@@ -187,6 +188,9 @@ async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
         cache.keys = imported;
         cache.jwks = jwksByKid;
         cache.expiresAt = Date.now() + JWKS_CACHE_TTL_MS;
+        for (const kid of imported.keys()) {
+          cache.missing.delete(kid);
+        }
       } else if (cache.keys.size === 0) {
         cache.expiresAt = 0;
         cache.jwks = jwksByKid;
