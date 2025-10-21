@@ -44,6 +44,7 @@ type KeyCache = {
   jwks: Map<string, AccessJwk>;
   expiresAt: number;
   inflight: Promise<void> | null;
+  missingKids: Map<string, number>;
 };
 
 const ALLOWED_ALGORITHMS = new Set(["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]);
@@ -53,6 +54,7 @@ const RSA_HASH_BY_ALG = new Map<string, HashName>([
   ["RS512", "SHA-512"],
 ]);
 const keyCaches = new Map<string, KeyCache>();
+const NEGATIVE_CACHE_TTL_MS = 60 * 1000;
 
 export async function requireAccess(req: Request, env?: AccessEnvironment): Promise<boolean> {
   const jwt = req.headers.get("CF-Access-Jwt-Assertion");
@@ -188,22 +190,6 @@ async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
           jwksByKid.set(jwk.kid, jwk);
 
           if (jwk.kty === "RSA") {
-            const rsaAlgorithms = getRsaAlgorithmsToImport(jwk);
-            await Promise.all(
-              rsaAlgorithms.map(async ([alg, hashName]) => {
-                if (!ALLOWED_ALGORITHMS.has(alg)) return;
-
-                const algorithm = getImportAlgorithm(jwk, hashName);
-                if (!algorithm) return;
-
-                try {
-                  const cryptoKey = await crypto.subtle.importKey("jwk", jwk, algorithm, false, ["verify"]);
-                  imported.set(getCacheKey(jwk.kid!, alg), cryptoKey);
-                } catch (error) {
-                  console.error("failed to import jwk", `${jwk.kid}:${alg}`, error);
-                }
-              }),
-            );
             return;
           }
 
@@ -224,6 +210,7 @@ async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
 
       if (jwksByKid.size > 0) {
         cache.expiresAt = Date.now() + JWKS_CACHE_TTL_MS;
+        cache.missingKids.clear();
       } else if (cache.keys.size === 0) {
         cache.expiresAt = 0;
       }
@@ -424,7 +411,13 @@ function curveHash(curve: EcNamedCurve | undefined): HashName {
 }
 
 function normalizeIssuer(value: string): string {
-  return value.replace(/\/+$/, "");
+  let end = value.length;
+
+  while (end > 0 && value.charCodeAt(end - 1) === 47 /* '/' */) {
+    end -= 1;
+  }
+
+  return end === value.length ? value : value.slice(0, end);
 }
 
 export default requireAccess;
