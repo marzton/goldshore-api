@@ -421,6 +421,7 @@ function getCache(url: string): KeyCache {
 }
 
 function getCacheKey(kid: string, alg?: string): string {
+  return alg ? `${alg}:${encodeURIComponent(kid)}` : kid;
   return alg ? `${kid}:${alg}` : kid;
 }
 
