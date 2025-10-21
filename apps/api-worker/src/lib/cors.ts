@@ -15,7 +15,12 @@ const createOriginRule = (pattern: string): OriginRule | null => {
   if (!value) return null;
   if (value === "*") return { type: "wildcard" };
   if (!value.includes("*")) return { type: "exact", value };
-  const regex = new RegExp(`^${escapeRegex(value).replace(/\*/g, ".*")}$`);
+  const regex = new RegExp(
+    `^${value
+      .split("*")
+      .map((segment) => escapeRegex(segment))
+      .join(".*")}$`
+  );
   return { type: "pattern", regex };
 };
 
