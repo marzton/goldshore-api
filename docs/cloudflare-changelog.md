@@ -2,6 +2,7 @@
 
 | Date | Area | Before | After | Notes |
 | --- | --- | --- | --- | --- |
+| 2024-12-01 | DNS + Access | No dedicated admin hostname, worker dev route not protected, WARP login unavailable | Added `admin.goldshore.org` CNAME, extended Access domains to cover prod + dev worker routes, enabled Cloudflare WARP posture on admin app | Ensures admin console + API require managed devices across environments |
 | 2024-11-20 | Access | Separate admin + API apps, GitHub login disabled | Unified `goldshore-admin` app covers workers.dev + `api.goldshore.org`, GitHub IdP enabled | Aligns with admin console rollout and Access merge |
 | 2024-11-12 | DNS | Apex + subdomains pointing to legacy A records and circular CNAMES | Apex/web/www → `goldshore-web.pages.dev`, api → `goldshore-api.gslabs.workers.dev` (proxied) | Legacy records purged; configuration now idempotent |
 | 2024-11-12 | Pages | Multiple stale projects + preview aliases | Only `goldshore-web` active, previews protected by Access | Delete orphaned preview routes |
