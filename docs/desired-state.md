@@ -43,7 +43,6 @@ All legacy A/AAAA records (`100.2.111.41`, etc.) and circular CNAMES must be del
 - **Enabled**:
   - OIDC `https://goldshore.cloudflareaccess.com/cdn-cgi/access/sso/oidc/07665be501c60fa585bd8c697d77ebf86ce14f993fa7745ab52f54ad93f523fc`
   - GitHub (org membership gated; used for engineering break-glass)
-  - Cloudflare WARP (managed devices with Access for Infrastructure)
 - **Disabled**: One-time PIN, Google, Facebook, unused service tokens
 
 ### Applications
@@ -58,12 +57,11 @@ All legacy A/AAAA records (`100.2.111.41`, etc.) and circular CNAMES must be del
    - Identity failure redirect: `https://goldshore-web.pages.dev/access-denied`
 
 2. **Gold Shore Admin (Prod/Staging)**
-   - Domains: `https://goldshore-admin.goldshore.workers.dev/*`, `https://admin.goldshore.org/*`, `https://api.goldshore.org/*`, `https://goldshore-api.gslabs.workers.dev/*`
+   - Domains: `https://goldshore-admin.goldshore.workers.dev/*`, `https://api.goldshore.org/*`
    - Policies (order matters):
-     1. Allow: Device posture — Cloudflare WARP (Gold Shore managed fleet)
-     2. Allow: email glob `*@goldshore.org`
-     3. Allow: GitHub login (Gold Shore Labs org members)
-     4. Default deny
+     1. Allow: email glob `*@goldshore.org`
+     2. Allow: GitHub login (Gold Shore Labs org members)
+     3. Default deny
    - Session duration: 24 hours
    - Appearance: tags `Gold Shore`, `Admin`, `Prod`; logo `https://goldshore-web.pages.dev/images/penrose_logo.svg`
    - Inject header: `Cf-Access-Authenticated-User-Email`

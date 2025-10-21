@@ -102,7 +102,7 @@ export class CustomerSubscriptionService {
       customer_id,
       subscription_id,
       status = "active",
-      subscription_ends_at = Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days from now by default
+      subscription_ends_at = Date.now() + 60 * 60 * 24 * 30, // 30 days from now by default
     } = customerSubscriptionData;
 
     const response = await this.DB.prepare(
