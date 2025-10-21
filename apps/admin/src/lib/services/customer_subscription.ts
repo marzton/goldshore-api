@@ -1,3 +1,8 @@
+import {
+  deriveSubscriptionStatus,
+  parseSubscriptionEndsAt,
+} from "@/lib/utils/subscription-status";
+
 export const CUSTOMER_SUBSCRIPTION_QUERIES = {
   BASE_SELECT: `
     SELECT 
@@ -35,10 +40,19 @@ const processCustomerSubscriptionResults = (rows) => {
 
   rows.forEach((row) => {
     if (!subscriptionsMap.has(row.id)) {
+      const subscriptionEndsAt = parseSubscriptionEndsAt(
+        row.subscription_ends_at,
+      );
+      const derivedStatus = deriveSubscriptionStatus(
+        row.status,
+        row.subscription_ends_at,
+      );
+
       const customerSubscription = {
         id: row.id,
-        status: row.status,
-        subscription_ends_at: row.subscription_ends_at,
+        status: derivedStatus,
+        subscription_ends_at:
+          subscriptionEndsAt ?? row.subscription_ends_at ?? null,
         customer: {
           id: row.customer_id,
           name: row.customer_name,
