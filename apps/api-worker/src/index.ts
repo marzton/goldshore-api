@@ -25,7 +25,7 @@ export default {
     }
 
     if (url.pathname.startsWith("/v1/")) {
-      if (!(await requireAccess(req))) {
+      if (!(await requireAccess(req, env))) {
         return unauthorized(cors);
       }
 
