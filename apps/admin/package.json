@@ -11,7 +11,8 @@
     "cf:typegen": "wrangler types --config wrangler.jsonc",
     "db:migrate": "wrangler d1 migrations apply DB --local --config wrangler.jsonc",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote --config wrangler.jsonc",
-    "db:reset": "wrangler d1 migrations reset DB --local --config wrangler.jsonc"
+    "db:reset": "wrangler d1 migrations reset DB --local --config wrangler.jsonc",
+    "test": "tsx --test src/lib/utils/subscription.test.ts"
   },
   "dependencies": {
     "@astrojs/cloudflare": "12.6.0",
@@ -39,6 +40,7 @@
     "zod": "3.25.67"
   },
   "devDependencies": {
-    "wrangler": "^4.42.2"
+    "wrangler": "^4.42.2",
+    "tsx": "^4.19.2"
   }
 }

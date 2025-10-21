@@ -1,14 +1,20 @@
+import {
+  deriveSubscriptionStatus,
+  resolveSubscriptionEndsAt,
+} from "@/lib/utils/subscription";
+
 export const CUSTOMER_QUERIES = {
   BASE_SELECT: `
-    SELECT 
+    SELECT
       customers.*,
       customer_subscriptions.id as subscription_id,
       customer_subscriptions.status as subscription_status,
+      customer_subscriptions.subscription_ends_at as subscription_ends_at,
       subscriptions.name as subscription_name,
       subscriptions.description as subscription_description,
       subscriptions.price as subscription_price
-    FROM customers 
-    LEFT JOIN customer_subscriptions 
+    FROM customers
+    LEFT JOIN customer_subscriptions
       ON customers.id = customer_subscriptions.customer_id
     LEFT JOIN subscriptions
       ON customer_subscriptions.subscription_id = subscriptions.id
@@ -29,17 +35,25 @@ const processCustomerResults = (rows: any[]) => {
     if (!customersMap.has(row.id)) {
       const customer = { ...row };
       if (row.subscription_id) {
+        const subscriptionEndsAt = resolveSubscriptionEndsAt(
+          row.subscription_ends_at,
+        );
         customer.subscription = {
           id: row.subscription_id,
-          status: row.subscription_status,
+          status: deriveSubscriptionStatus(
+            row.subscription_status,
+            subscriptionEndsAt,
+          ),
           name: row.subscription_name,
           description: row.subscription_description,
           price: row.subscription_price,
+          ends_at: subscriptionEndsAt,
         };
       }
       // Clean up raw join fields
       delete customer.subscription_id;
       delete customer.subscription_status;
+      delete customer.subscription_ends_at;
       delete customer.subscription_name;
       delete customer.subscription_description;
       delete customer.subscription_price;
