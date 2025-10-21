@@ -53,6 +53,9 @@ const columns: ColumnDef<Customer>[] = [
     header: "Notes",
     cell: (info) => info.getValue(),
   }),
+  columnHelper.accessor("subscription.status", {
+    header: "Subscription",
+    cell: (info) => info.getValue(),
   columnHelper.accessor((row) => row.subscription?.status ?? null, {
     id: "subscription.status",
     header: "Subscription",
