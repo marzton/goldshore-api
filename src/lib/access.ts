@@ -156,7 +156,13 @@ async function getKey(kid: string, alg: string, config: AccessConfig): Promise<C
 function getCache(url: string): KeyCache {
   let cache = keyCaches.get(url);
   if (!cache) {
-    cache = { keys: new Map(), jwks: new Map(), expiresAt: 0, inflight: null };
+    cache = {
+      keys: new Map(),
+      jwks: new Map(),
+      expiresAt: 0,
+      inflight: null,
+      missingKids: new Map(),
+    };
     keyCaches.set(url, cache);
   }
   return cache;
@@ -342,22 +348,6 @@ function convertJoseSignatureToDer(signature: Uint8Array): Uint8Array {
   return der;
 }
 
-function encodeDerLength(length: number): Uint8Array {
-  if (length <= 0x7f) {
-    return Uint8Array.of(length);
-  }
-
-  const bytes: number[] = [];
-  let remaining = length;
-
-  while (remaining > 0) {
-    bytes.unshift(remaining & 0xff);
-    remaining >>= 8;
-  }
-
-  return Uint8Array.of(0x80 | bytes.length, ...bytes);
-}
-
 function trimLeadingZeros(bytes: Uint8Array): Uint8Array {
   let start = 0;
   while (start < bytes.length - 1 && bytes[start] === 0) {
@@ -378,7 +368,7 @@ function encodeDerLength(length: number): Uint8Array {
     throw new Error("DER length cannot be negative");
   }
 
-  if (length < 0x80) {
+  if (length <= 0x7f) {
     return Uint8Array.of(length);
   }
 
