@@ -242,6 +242,18 @@ function getCacheKey(kid: string, alg?: string): string {
   return kid;
 }
 
+function getRsaAlgorithmsToImport(jwk: AccessJwk): Array<[string, HashName]> {
+  if (typeof jwk.alg === "string") {
+    const hashName = RSA_HASH_BY_ALG.get(jwk.alg);
+    if (!hashName) {
+      return [];
+    }
+    return [[jwk.alg, hashName]];
+  }
+
+  return Array.from(RSA_HASH_BY_ALG.entries());
+}
+
 function getImportAlgorithm(jwk: AccessJwk, hashName?: HashName): SupportedImportParams | null {
   if (jwk.kty === "RSA") {
     const hash = hashName ?? "SHA-256";
@@ -306,21 +318,44 @@ function convertJoseSignatureToDer(signature: Uint8Array): Uint8Array {
     s = prependZero(s);
   }
 
-  const derLength = 2 + r.length + 2 + s.length;
-  const der = new Uint8Array(2 + derLength);
+  const rLengthField = encodeDerLength(r.length);
+  const sLengthField = encodeDerLength(s.length);
+  const sequenceLength =
+    1 + rLengthField.length + r.length + 1 + sLengthField.length + s.length;
+  const sequenceLengthField = encodeDerLength(sequenceLength);
+  const der = new Uint8Array(1 + sequenceLengthField.length + sequenceLength);
   let offset = 0;
 
   der[offset++] = 0x30;
-  der[offset++] = derLength;
+  der.set(sequenceLengthField, offset);
+  offset += sequenceLengthField.length;
   der[offset++] = 0x02;
-  der[offset++] = r.length;
+  der.set(rLengthField, offset);
+  offset += rLengthField.length;
   der.set(r, offset);
   offset += r.length;
   der[offset++] = 0x02;
-  der[offset++] = s.length;
+  der.set(sLengthField, offset);
+  offset += sLengthField.length;
   der.set(s, offset);
 
   return der;
+}
+
+function encodeDerLength(length: number): Uint8Array {
+  if (length <= 0x7f) {
+    return Uint8Array.of(length);
+  }
+
+  const bytes: number[] = [];
+  let remaining = length;
+
+  while (remaining > 0) {
+    bytes.unshift(remaining & 0xff);
+    remaining >>= 8;
+  }
+
+  return Uint8Array.of(0x80 | bytes.length, ...bytes);
 }
 
 function trimLeadingZeros(bytes: Uint8Array): Uint8Array {
@@ -336,6 +371,26 @@ function prependZero(bytes: Uint8Array): Uint8Array {
   result[0] = 0;
   result.set(bytes, 1);
   return result;
+}
+
+function encodeDerLength(length: number): Uint8Array {
+  if (length < 0) {
+    throw new Error("DER length cannot be negative");
+  }
+
+  if (length < 0x80) {
+    return Uint8Array.of(length);
+  }
+
+  const bytes: number[] = [];
+  let remaining = length;
+
+  while (remaining > 0) {
+    bytes.unshift(remaining & 0xff);
+    remaining >>= 8;
+  }
+
+  return Uint8Array.of(0x80 | bytes.length, ...bytes);
 }
 
 function isAudienceValid(aud: AccessPayload["aud"], expected: string): boolean {
