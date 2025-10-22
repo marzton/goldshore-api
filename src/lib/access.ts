@@ -35,9 +35,9 @@ type SupportedImportParams =
   | { name: "RSASSA-PKCS1-v1_5"; hash: { name: HashName } }
   | { name: "ECDSA"; namedCurve: EcNamedCurve };
 
-type VerifyParams =
-  | { name: "RSASSA-PKCS1-v1_5" }
-  | { name: "ECDSA"; hash: { name: HashName } };
+type VerifyContext =
+  | { params: { name: "RSASSA-PKCS1-v1_5" } }
+  | { params: { name: "ECDSA"; hash: { name: HashName } }; namedCurve: EcNamedCurve };
 
 type KeyCache = {
   keys: Map<string, CryptoKey>;
@@ -92,13 +92,13 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
   const data = encoder.encode(`${parts[0]}.${parts[1]}`);
   let signature = base64UrlToUint8Array(parts[2]);
 
-  const verifyParams = getVerifyParams(key);
-  if (!verifyParams) {
+  const verifyContext = getVerifyContext(key);
+  if (!verifyContext) {
     console.error("unsupported key algorithm", key.algorithm);
     return false;
   }
 
-  if (verifyParams.name === "ECDSA") {
+  if ("namedCurve" in verifyContext) {
     try {
       signature = ieeeP1363ToDer(signature);
     } catch (error) {
@@ -108,7 +108,7 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
   }
 
   try {
-    return await crypto.subtle.verify(verifyParams, key, signature, data);
+    return await crypto.subtle.verify(verifyContext.params, key, signature, data);
   } catch (error) {
     console.error("access token verification failed", error);
     return false;
@@ -300,16 +300,16 @@ async function ensureKeyForAlgorithm(
   }
 }
 
-function getVerifyParams(key: CryptoKey): VerifyParams | null {
+function getVerifyContext(key: CryptoKey): VerifyContext | null {
   const algorithm = key.algorithm as { name: string; namedCurve?: EcNamedCurve };
 
   if (algorithm.name === "RSASSA-PKCS1-v1_5") {
-    return { name: "RSASSA-PKCS1-v1_5" };
+    return { params: { name: "RSASSA-PKCS1-v1_5" } };
   }
 
   if (algorithm.name === "ECDSA") {
     const hashName = curveHash(algorithm.namedCurve);
-    return { name: "ECDSA", hash: { name: hashName } };
+    return { params: { name: "ECDSA", hash: { name: hashName } }, namedCurve: algorithm.namedCurve ?? "P-256" };
   }
 
   return null;
