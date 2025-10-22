@@ -29,7 +29,7 @@ type AccessPayload = {
 type HashName = "SHA-256" | "SHA-384" | "SHA-512";
 type EcNamedCurve = "P-256" | "P-384" | "P-521";
 
-type AccessJwk = JsonWebKey & { kid?: string; kty?: string; crv?: string };
+type AccessJwk = JsonWebKey & { kid?: string; kty?: string; crv?: string; alg?: string };
 
 type SupportedImportParams =
   | { name: "RSASSA-PKCS1-v1_5"; hash: { name: HashName } }
@@ -253,6 +253,11 @@ function getImportAlgorithm(jwk: AccessJwk, algOverride?: string): SupportedImpo
       return null;
     }
     return { name: "RSASSA-PKCS1-v1_5", hash: { name: hash } };
+    const hashName = rsaHash(jwk.alg);
+    if (!hashName) {
+      return null;
+    }
+    return { name: "RSASSA-PKCS1-v1_5", hash: { name: hashName } };
   }
 
   if (jwk.kty === "EC" && typeof jwk.crv === "string") {
@@ -425,12 +430,16 @@ function rsaHash(alg: string | undefined): HashName | null {
   }
 
   switch (alg.toUpperCase()) {
+function rsaHash(algorithm: string | undefined): HashName | null {
+  switch (algorithm) {
     case "RS256":
       return "SHA-256";
     case "RS384":
       return "SHA-384";
     case "RS512":
       return "SHA-512";
+    case undefined:
+      return "SHA-256";
     default:
       return null;
   }
