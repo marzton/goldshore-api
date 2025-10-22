@@ -48,6 +48,7 @@ type KeyCache = {
 };
 
 const ALLOWED_ALGORITHMS = new Set(["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]);
+const RSA_HASHES: readonly HashName[] = ["SHA-256", "SHA-384", "SHA-512"];
 const keyCaches = new Map<string, KeyCache>();
 
 export async function requireAccess(req: Request, env?: AccessEnvironment): Promise<boolean> {
@@ -240,7 +241,13 @@ async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
           jwks.set(jwk.kid, jwk);
 
           const algorithm = getImportAlgorithm(jwk);
-          if (!algorithm) return;
+
+          if (!algorithm) {
+            if (jwk.kty === "RSA") {
+              await importRsaKeyForAllHashes(jwk, rsaKeys);
+            }
+            return;
+          }
 
           try {
             const cryptoKey = await crypto.subtle.importKey("jwk", jwk, algorithm, false, ["verify"]);
@@ -282,6 +289,45 @@ async function loadJwks(cache: KeyCache, config: AccessConfig): Promise<void> {
   }
 }
 
+async function importRsaKeyForAllHashes(
+  jwk: AccessJwk,
+  rsaKeys: Map<string, Map<HashName, CryptoKey>>,
+): Promise<void> {
+  if (!jwk.kid) {
+    return;
+  }
+
+  let byHash = rsaKeys.get(jwk.kid);
+  if (!byHash) {
+    byHash = new Map<HashName, CryptoKey>();
+    rsaKeys.set(jwk.kid, byHash);
+  }
+
+  let imported = false;
+  let lastError: unknown;
+
+  for (const hashName of RSA_HASHES) {
+    try {
+      const cryptoKey = await crypto.subtle.importKey(
+        "jwk",
+        jwk,
+        { name: "RSASSA-PKCS1-v1_5", hash: { name: hashName } },
+        false,
+        ["verify"],
+      );
+      byHash.set(hashName, cryptoKey);
+      imported = true;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (!imported) {
+    rsaKeys.delete(jwk.kid);
+    console.error("failed to import rsa jwk", jwk.kid, lastError);
+  }
+}
+
 function resolveConfig(env?: AccessEnvironment): AccessConfig {
   const audience = env?.ACCESS_AUDIENCE?.trim() || DEFAULT_ACCESS_AUDIENCE;
   const issuer = normalizeIssuer(env?.ACCESS_ISSUER || DEFAULT_ACCESS_ISSUER);
@@ -292,7 +338,10 @@ function resolveConfig(env?: AccessEnvironment): AccessConfig {
 
 function getImportAlgorithm(jwk: AccessJwk, hashOverride?: HashName): SupportedImportParams | null {
   if (jwk.kty === "RSA") {
-    const hashName = hashOverride ?? rsaHashFromAlg(jwk.alg) ?? "SHA-256";
+    const hashName = hashOverride ?? rsaHashFromAlg(jwk.alg);
+    if (!hashName) {
+      return null;
+    }
     return { name: "RSASSA-PKCS1-v1_5", hash: { name: hashName } };
   }
 
