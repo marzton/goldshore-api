@@ -41,6 +41,7 @@ type VerifyParams =
 
 type KeyCache = {
   keys: Map<string, CryptoKey>;
+  jwks: Map<string, AccessJwk>;
   jwkByKid: Map<string, AccessJwk>;
   expiresAt: number;
   inflight: Promise<void> | null;
@@ -48,6 +49,11 @@ type KeyCache = {
 };
 
 const ALLOWED_ALGORITHMS = new Set(["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]);
+const RSA_HASH_BY_ALG = new Map<string, HashName>([
+  ["RS256", "SHA-256"],
+  ["RS384", "SHA-384"],
+  ["RS512", "SHA-512"],
+]);
 const keyCaches = new Map<string, KeyCache>();
 const NEGATIVE_CACHE_TTL_MS = 60 * 1000;
 
@@ -72,7 +78,7 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
     return false;
   }
 
-  if (!header?.kid || (header.alg && !ALLOWED_ALGORITHMS.has(header.alg))) {
+  if (!header?.kid || !header.alg || !ALLOWED_ALGORITHMS.has(header.alg)) {
     return false;
   }
 
@@ -99,6 +105,8 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
     return false;
   }
 
+  const normalizedSignature =
+    verifyParams.name === "ECDSA" ? convertJoseSignatureToDer(signature) : signature;
   const normalizedSignature = normalizeSignature(signature, key, verifyParams);
   if (!normalizedSignature) {
     return false;
@@ -112,6 +120,43 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
   }
 }
 
+async function getKey(kid: string, alg: string, config: AccessConfig): Promise<CryptoKey | undefined> {
+  const cache = getCache(config.jwksUrl);
+  const cacheKey = getCacheKey(kid, alg);
+  const isRsa = RSA_HASH_BY_ALG.has(alg);
+
+  if (cache.expiresAt > Date.now() && cache.keys.has(cacheKey)) {
+    return cache.keys.get(cacheKey);
+  }
+
+  await loadJwks(cache, config);
+  if (cache.keys.has(cacheKey)) {
+    return cache.keys.get(cacheKey);
+  }
+
+  if (!isRsa) {
+    return undefined;
+  }
+
+  const hashName = RSA_HASH_BY_ALG.get(alg);
+  const jwk = hashName ? cache.jwks.get(kid) : undefined;
+  if (!hashName || !jwk) {
+    return undefined;
+  }
+
+  const algorithm = getImportAlgorithm(jwk, hashName);
+  if (!algorithm) {
+    return undefined;
+  }
+
+  try {
+    const cryptoKey = await crypto.subtle.importKey("jwk", jwk, algorithm, false, ["verify"]);
+    cache.keys.set(cacheKey, cryptoKey);
+    return cryptoKey;
+  } catch (error) {
+    console.error("failed to import jwk", `${kid}:${alg}`, error);
+    return undefined;
+  }
 async function getKey(
   kid: string,
   config: AccessConfig,
@@ -156,6 +201,7 @@ function getCache(url: string): KeyCache {
   if (!cache) {
     cache = {
       keys: new Map(),
+      jwks: new Map(),
       jwkByKid: new Map(),
       expiresAt: 0,
       inflight: null,
@@ -185,11 +231,18 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, forceReload = fal
       const body = await res.json<{ keys?: JsonWebKey[] }>();
       const keys = (body.keys ?? []) as AccessJwk[];
       const imported = new Map<string, CryptoKey>();
+      const jwksByKid = new Map<string, AccessJwk>();
       const jwkByKid = new Map<string, AccessJwk>();
 
       await Promise.all(
         keys.map(async (jwk) => {
           if (!jwk.kid) return;
+
+          jwksByKid.set(jwk.kid, jwk);
+
+          if (jwk.kty === "RSA") {
+            return;
+          }
 
           jwkByKid.set(jwk.kid, jwk);
           const algorithm = getImportAlgorithm(jwk);
@@ -197,13 +250,17 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, forceReload = fal
 
           try {
             const cryptoKey = await crypto.subtle.importKey("jwk", jwk, algorithm, false, ["verify"]);
-            imported.set(jwk.kid, cryptoKey);
+            imported.set(getCacheKey(jwk.kid), cryptoKey);
           } catch (error) {
             console.error("failed to import jwk", jwk.kid, error);
           }
         }),
       );
 
+      cache.keys = imported;
+      cache.jwks = jwksByKid;
+
+      if (jwksByKid.size > 0) {
       if (jwkByKid.size > 0) {
         cache.jwkByKid = jwkByKid;
       }
@@ -236,6 +293,29 @@ function resolveConfig(env?: AccessEnvironment): AccessConfig {
   return { audience, issuer, jwksUrl };
 }
 
+function getCacheKey(kid: string, alg?: string): string {
+  if (alg && RSA_HASH_BY_ALG.has(alg)) {
+    return `${kid}:${alg}`;
+  }
+  return kid;
+}
+
+function getRsaAlgorithmsToImport(jwk: AccessJwk): Array<[string, HashName]> {
+  if (typeof jwk.alg === "string") {
+    const hashName = RSA_HASH_BY_ALG.get(jwk.alg);
+    if (!hashName) {
+      return [];
+    }
+    return [[jwk.alg, hashName]];
+  }
+
+  return Array.from(RSA_HASH_BY_ALG.entries());
+}
+
+function getImportAlgorithm(jwk: AccessJwk, hashName?: HashName): SupportedImportParams | null {
+  if (jwk.kty === "RSA") {
+    const hash = hashName ?? "SHA-256";
+    return { name: "RSASSA-PKCS1-v1_5", hash: { name: hash } };
 function getImportAlgorithm(jwk: AccessJwk, overrideHash?: HashName): SupportedImportParams | null {
   if (jwk.kty === "RSA") {
     const hashName = overrideHash ?? rsaHashFromAlg(jwk.alg) ?? "SHA-256";
@@ -330,6 +410,78 @@ function base64UrlToUint8Array(value: string): Uint8Array {
   }
 
   return bytes;
+}
+
+function convertJoseSignatureToDer(signature: Uint8Array): Uint8Array {
+  const midpoint = signature.length / 2;
+  let r = trimLeadingZeros(signature.slice(0, midpoint));
+  let s = trimLeadingZeros(signature.slice(midpoint));
+
+  if (r[0] & 0x80) {
+    r = prependZero(r);
+  }
+
+  if (s[0] & 0x80) {
+    s = prependZero(s);
+  }
+
+  const rLengthField = encodeDerLength(r.length);
+  const sLengthField = encodeDerLength(s.length);
+  const sequenceLength =
+    1 + rLengthField.length + r.length + 1 + sLengthField.length + s.length;
+  const sequenceLengthField = encodeDerLength(sequenceLength);
+  const der = new Uint8Array(1 + sequenceLengthField.length + sequenceLength);
+  let offset = 0;
+
+  der[offset++] = 0x30;
+  der.set(sequenceLengthField, offset);
+  offset += sequenceLengthField.length;
+  der[offset++] = 0x02;
+  der.set(rLengthField, offset);
+  offset += rLengthField.length;
+  der.set(r, offset);
+  offset += r.length;
+  der[offset++] = 0x02;
+  der.set(sLengthField, offset);
+  offset += sLengthField.length;
+  der.set(s, offset);
+
+  return der;
+}
+
+function trimLeadingZeros(bytes: Uint8Array): Uint8Array {
+  let start = 0;
+  while (start < bytes.length - 1 && bytes[start] === 0) {
+    start += 1;
+  }
+  return bytes.slice(start);
+}
+
+function prependZero(bytes: Uint8Array): Uint8Array {
+  const result = new Uint8Array(bytes.length + 1);
+  result[0] = 0;
+  result.set(bytes, 1);
+  return result;
+}
+
+function encodeDerLength(length: number): Uint8Array {
+  if (length < 0) {
+    throw new Error("DER length cannot be negative");
+  }
+
+  if (length <= 0x7f) {
+    return Uint8Array.of(length);
+  }
+
+  const bytes: number[] = [];
+  let remaining = length;
+
+  while (remaining > 0) {
+    bytes.unshift(remaining & 0xff);
+    remaining >>= 8;
+  }
+
+  return Uint8Array.of(0x80 | bytes.length, ...bytes);
 }
 
 function isAudienceValid(aud: AccessPayload["aud"], expected: string): boolean {
