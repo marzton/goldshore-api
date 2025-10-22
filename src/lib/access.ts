@@ -89,6 +89,7 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 
   const encoder = new TextEncoder();
   const data = encoder.encode(`${parts[0]}.${parts[1]}`);
+
   let signature: Uint8Array;
   try {
     signature = base64UrlToUint8Array(parts[2]);
@@ -397,6 +398,15 @@ function decodeSection<T>(section: string): T {
   const bytes = base64UrlToUint8Array(section);
   const text = new TextDecoder().decode(bytes);
   return JSON.parse(text) as T;
+}
+
+function decodeSignature(section: string): Uint8Array | null {
+  try {
+    return base64UrlToUint8Array(section);
+  } catch (error) {
+    console.error("invalid access token signature", error);
+    return null;
+  }
 }
 
 function base64UrlToUint8Array(value: string): Uint8Array {
