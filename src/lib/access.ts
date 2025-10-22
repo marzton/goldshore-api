@@ -248,16 +248,13 @@ function resolveConfig(env?: AccessEnvironment): AccessConfig {
 
 function getImportAlgorithm(jwk: AccessJwk, algOverride?: string): SupportedImportParams | null {
   if (jwk.kty === "RSA") {
-    const hash = rsaHash(algOverride ?? jwk.alg);
+    const algorithm = (algOverride ?? jwk.alg)?.toUpperCase();
+    const hash = rsaHash(algorithm);
     if (!hash) {
       return null;
     }
+
     return { name: "RSASSA-PKCS1-v1_5", hash: { name: hash } };
-    const hashName = rsaHash(jwk.alg);
-    if (!hashName) {
-      return null;
-    }
-    return { name: "RSASSA-PKCS1-v1_5", hash: { name: hashName } };
   }
 
   if (jwk.kty === "EC" && typeof jwk.crv === "string") {
@@ -424,22 +421,18 @@ function curveHash(curve: EcNamedCurve | undefined): HashName {
   }
 }
 
-function rsaHash(alg: string | undefined): HashName | null {
-  if (!alg) {
+function rsaHash(algorithm: string | undefined): HashName | null {
+  if (!algorithm) {
     return "SHA-256";
   }
 
-  switch (alg.toUpperCase()) {
-function rsaHash(algorithm: string | undefined): HashName | null {
-  switch (algorithm) {
+  switch (algorithm.toUpperCase()) {
     case "RS256":
       return "SHA-256";
     case "RS384":
       return "SHA-384";
     case "RS512":
       return "SHA-512";
-    case undefined:
-      return "SHA-256";
     default:
       return null;
   }
