@@ -527,7 +527,11 @@ function curveHash(curve: EcNamedCurve | undefined): HashName {
 }
 
 function normalizeIssuer(value: string): string {
-  return value.replace(/\/+$/, "");
+  let result = value;
+  while (result.endsWith("/")) {
+    result = result.slice(0, -1);
+  }
+  return result;
 }
 
 export default requireAccess;
