@@ -90,12 +90,21 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 
   const encoder = new TextEncoder();
   const data = encoder.encode(`${parts[0]}.${parts[1]}`);
-  const signature = base64UrlToUint8Array(parts[2]);
+  let signature = base64UrlToUint8Array(parts[2]);
 
   const verifyParams = getVerifyParams(key);
   if (!verifyParams) {
     console.error("unsupported key algorithm", key.algorithm);
     return false;
+  }
+
+  if (verifyParams.name === "ECDSA") {
+    try {
+      signature = ieeeP1363ToDer(signature);
+    } catch (error) {
+      console.error("failed to convert ecdsa signature", error);
+      return false;
+    }
   }
 
   try {
@@ -324,6 +333,76 @@ function base64UrlToUint8Array(value: string): Uint8Array {
   }
 
   return bytes;
+}
+
+function ieeeP1363ToDer(signature: Uint8Array): Uint8Array {
+  if (signature.length % 2 !== 0) {
+    throw new Error("invalid ecdsa signature length");
+  }
+
+  const half = signature.length / 2;
+  const r = normalizeInteger(signature.slice(0, half));
+  const s = normalizeInteger(signature.slice(half));
+
+  const rLen = encodeDerLength(r.length);
+  const sLen = encodeDerLength(s.length);
+  const sequenceLength = 1 + rLen.length + r.length + 1 + sLen.length + s.length;
+  const seqLen = encodeDerLength(sequenceLength);
+
+  const result = new Uint8Array(1 + seqLen.length + sequenceLength);
+  let offset = 0;
+  result[offset++] = 0x30;
+  result.set(seqLen, offset);
+  offset += seqLen.length;
+
+  result[offset++] = 0x02;
+  result.set(rLen, offset);
+  offset += rLen.length;
+  result.set(r, offset);
+  offset += r.length;
+
+  result[offset++] = 0x02;
+  result.set(sLen, offset);
+  offset += sLen.length;
+  result.set(s, offset);
+
+  return result;
+}
+
+function normalizeInteger(bytes: Uint8Array): Uint8Array {
+  let offset = 0;
+  while (offset < bytes.length && bytes[offset] === 0) {
+    offset += 1;
+  }
+
+  let normalized = bytes.slice(offset);
+  if (normalized.length === 0) {
+    normalized = new Uint8Array([0]);
+  }
+
+  if (normalized[0] & 0x80) {
+    const extended = new Uint8Array(normalized.length + 1);
+    extended[0] = 0;
+    extended.set(normalized, 1);
+    return extended;
+  }
+
+  return normalized;
+}
+
+function encodeDerLength(length: number): Uint8Array {
+  if (length < 0x80) {
+    return new Uint8Array([length]);
+  }
+
+  const bytes: number[] = [];
+  let value = length;
+  while (value > 0) {
+    bytes.unshift(value & 0xff);
+    value >>= 8;
+  }
+
+  return new Uint8Array([0x80 | bytes.length, ...bytes]);
 }
 
 function isAudienceValid(aud: AccessPayload["aud"], expected: string): boolean {
