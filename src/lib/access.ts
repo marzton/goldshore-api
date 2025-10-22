@@ -58,7 +58,7 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 
   let header: AccessHeader;
   let payload: AccessPayload;
-  let signature: Uint8Array;
+  let signature: Uint8Array | null = null;
 
   try {
     header = decodeSection<AccessHeader>(parts[0]);
@@ -66,6 +66,10 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
     signature = base64UrlToUint8Array(parts[2]);
   } catch (error) {
     console.error("invalid access token section", error);
+    return false;
+  }
+
+  if (!signature) {
     return false;
   }
 
