@@ -41,6 +41,7 @@ type VerifyParams =
 
 type KeyCache = {
   keys: Map<string, CryptoKey>;
+  jwks: Map<string, AccessJwk>;
   expiresAt: number;
   inflight: Promise<void> | null;
 };
@@ -77,7 +78,7 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 
   let key: CryptoKey | undefined;
   try {
-    key = await getKey(header.kid, config);
+    key = await getKey(header.kid, header.alg, config);
   } catch (error) {
     console.error("failed to load access signing keys", error);
     return false;
@@ -131,23 +132,47 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
   }
 }
 
-async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | undefined> {
+async function getKey(kid: string, alg: string | undefined, config: AccessConfig): Promise<CryptoKey | undefined> {
   const cache = getCache(config.jwksUrl);
+  const cacheKey = createCacheKey(kid, alg);
 
   const cacheValid = cache.expiresAt > Date.now();
-  if (cacheValid && cache.keys.has(kid)) {
-    return cache.keys.get(kid);
+  if (cacheValid && cache.keys.has(cacheKey)) {
+    return cache.keys.get(cacheKey);
   }
 
-  const forceRefresh = cacheValid && !cache.keys.has(kid);
+  const forceRefresh = cacheValid && !cache.jwks.has(kid);
   await loadJwks(cache, config, forceRefresh);
-  return cache.keys.get(kid);
+
+  const cached = cache.keys.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const jwk = cache.jwks.get(kid);
+  if (!jwk) {
+    return undefined;
+  }
+
+  const importAlgorithm = getImportAlgorithm(jwk, alg);
+  if (!importAlgorithm) {
+    return undefined;
+  }
+
+  try {
+    const cryptoKey = await crypto.subtle.importKey("jwk", jwk, importAlgorithm, false, ["verify"]);
+    cache.keys.set(cacheKey, cryptoKey);
+    return cryptoKey;
+  } catch (error) {
+    console.error("failed to import jwk", kid, error);
+    return undefined;
+  }
 }
 
 function getCache(url: string): KeyCache {
   let cache = keyCaches.get(url);
   if (!cache) {
-    cache = { keys: new Map(), expiresAt: 0, inflight: null };
+    cache = { keys: new Map(), jwks: new Map(), expiresAt: 0, inflight: null };
     keyCaches.set(url, cache);
   }
   return cache;
@@ -172,22 +197,27 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, force = false): P
       const body = await res.json<{ keys?: JsonWebKey[] }>();
       const keys = (body.keys ?? []) as AccessJwk[];
       const imported = new Map<string, CryptoKey>();
+      const jwks = new Map<string, AccessJwk>();
 
       await Promise.all(
         keys.map(async (jwk) => {
           if (!jwk.kid) return;
+
+          jwks.set(jwk.kid, jwk);
 
           const algorithm = getImportAlgorithm(jwk);
           if (!algorithm) return;
 
           try {
             const cryptoKey = await crypto.subtle.importKey("jwk", jwk, algorithm, false, ["verify"]);
-            imported.set(jwk.kid, cryptoKey);
+            imported.set(createCacheKey(jwk.kid, jwk.alg), cryptoKey);
           } catch (error) {
             console.error("failed to import jwk", jwk.kid, error);
           }
         }),
       );
+
+      cache.jwks = jwks;
 
       if (imported.size > 0) {
         cache.keys = imported;
@@ -216,8 +246,13 @@ function resolveConfig(env?: AccessEnvironment): AccessConfig {
   return { audience, issuer, jwksUrl };
 }
 
-function getImportAlgorithm(jwk: AccessJwk): SupportedImportParams | null {
+function getImportAlgorithm(jwk: AccessJwk, algOverride?: string): SupportedImportParams | null {
   if (jwk.kty === "RSA") {
+    const hash = rsaHash(algOverride ?? jwk.alg);
+    if (!hash) {
+      return null;
+    }
+    return { name: "RSASSA-PKCS1-v1_5", hash: { name: hash } };
     const hashName = rsaHash(jwk.alg);
     if (!hashName) {
       return null;
@@ -389,6 +424,12 @@ function curveHash(curve: EcNamedCurve | undefined): HashName {
   }
 }
 
+function rsaHash(alg: string | undefined): HashName | null {
+  if (!alg) {
+    return "SHA-256";
+  }
+
+  switch (alg.toUpperCase()) {
 function rsaHash(algorithm: string | undefined): HashName | null {
   switch (algorithm) {
     case "RS256":
@@ -402,6 +443,11 @@ function rsaHash(algorithm: string | undefined): HashName | null {
     default:
       return null;
   }
+}
+
+function createCacheKey(kid: string, alg: string | undefined): string {
+  const hash = rsaHash(alg);
+  return hash ? `${kid}:${hash}` : kid;
 }
 
 function normalizeIssuer(value: string): string {
