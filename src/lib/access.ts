@@ -89,12 +89,8 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 
   const encoder = new TextEncoder();
   const data = encoder.encode(`${parts[0]}.${parts[1]}`);
-
-  let signature: Uint8Array;
-  try {
-    signature = base64UrlToUint8Array(parts[2]);
-  } catch (error) {
-    console.error("invalid access token signature", error);
+  const signature = decodeSignature(parts[2]);
+  if (!signature) {
     return false;
   }
 
