@@ -2,6 +2,16 @@
 
 Cloudflare Workers API that orchestrates trading, market data, news/filings, research, ads, reports, and backtests for Goldshore. This document captures the modular `/v1` surface so new providers can plug in without touching the entrypoint.
 
+## GoldShore-Agent surfaces
+
+- `GET /health` — readiness probe (unauthenticated).
+- `GET /status` — metadata describing the active worker, model, and known routes.
+- `POST /codex-agent` — authenticated command execution (`status`, `generate-cover`).
+- `GET /autoapply` — returns cached job matches for partners (GET-only on BanProof alias).
+- `POST /autoapply` — authenticated trigger to refresh job matches and persist to KV.
+- `GET /logs` — authenticated retrieval of the latest system log entries.
+- `GET /v1/whoami` — Access-introspected identity response.
+
 ## Routing overview
 
 - `GET /health` — public readiness probe.

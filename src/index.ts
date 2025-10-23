@@ -1,6 +1,10 @@
 import { corsHeaders } from "./lib/cors";
 import { requireAccess } from "./lib/access";
-import { ok, unauthorized } from "./lib/util";
+import { bad, ok, unauthorized } from "./lib/util";
+import { handleCodexAgent } from "./agent/codex-agent";
+import { handleAutoApply } from "./agent/autoapply";
+import { handleStatus } from "./agent/status";
+import { handleLogs } from "./agent/logs";
 import type { Env } from "./types";
 
 const notFound = (headers: Headers): Response =>
@@ -14,6 +18,9 @@ const withContentType = (headers: Headers, value: string): Headers => {
   copy.set("Content-Type", value);
   return copy;
 };
+
+const methodNotAllowed = (headers: Headers): Response =>
+  bad("METHOD_NOT_ALLOWED", 405, headers);
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
@@ -29,11 +36,41 @@ export default {
       return ok(
         {
           ok: true,
-          service: "goldshore-api",
+          service: env.SERVICE_NAME ?? "goldshore-agent",
           time: new Date().toISOString()
         },
         cors
       );
+    }
+
+    if (url.pathname === "/status" && request.method === "GET") {
+      return handleStatus(env, cors);
+    }
+
+    if (url.pathname === "/logs" && request.method === "GET") {
+      const access = await requireAccess(request, env);
+      if (!access.authorized) {
+        const headers = new Headers(cors);
+        headers.set("WWW-Authenticate", 'Bearer realm="Cloudflare Access"');
+        return unauthorized(headers);
+      }
+      return handleLogs(request, env, cors, access.identity ?? null);
+    }
+
+    if (url.pathname.startsWith("/codex-agent")) {
+      if (request.method !== "POST") {
+        return methodNotAllowed(cors);
+      }
+
+      return handleCodexAgent(request, env, cors);
+    }
+
+    if (url.pathname.startsWith("/autoapply")) {
+      if (request.method !== "GET" && request.method !== "POST") {
+        return methodNotAllowed(cors);
+      }
+
+      return handleAutoApply(request, env, cors);
     }
 
     if (url.pathname === "/v1/whoami") {

@@ -26,6 +26,12 @@ type JwkKey = {
 const jwksCache = new Map<string, { keys: JwkKey[]; fetchedAt: number }>();
 const JWKS_TTL = 5 * 60 * 1000; // 5 minutes
 
+const RSA_ALGORITHM_HASH: Record<string, string> = {
+  RS256: "SHA-256",
+  RS384: "SHA-384",
+  RS512: "SHA-512",
+};
+
 export async function requireAccess(request: Request, env: Env): Promise<AccessResult> {
   const assertion = request.headers.get("Cf-Access-Jwt-Assertion") ?? undefined;
   const emailHeader = request.headers.get("Cf-Access-Authenticated-User-Email") ?? undefined;
@@ -84,16 +90,17 @@ async function verifyAssertion(token: string, env: Env): Promise<AccessIdentity 
     return undefined;
   }
 
-  const algorithm = (header.alg as string | undefined) ?? "RS256";
-  if (!isAlgorithmAllowed(algorithm)) {
+  const algorithmCandidate = (header.alg as string | undefined) ?? jwk.alg ?? "RS256";
+  if (!isAlgorithmAllowed(algorithmCandidate)) {
     return undefined;
   }
+  const algorithm: keyof typeof RSA_ALGORITHM_HASH = algorithmCandidate;
 
   try {
     const verifier = await crypto.subtle.importKey(
       "jwk",
-      { ...jwk, alg: "RS256", ext: true },
-      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      { ...jwk, alg: algorithm, ext: true },
+      { name: "RSASSA-PKCS1-v1_5", hash: { name: RSA_ALGORITHM_HASH[algorithm] } },
       false,
       ["verify"]
     );
@@ -179,6 +186,6 @@ function base64UrlToBytes(input: string): Uint8Array {
   return output;
 }
 
-function isAlgorithmAllowed(alg: string): boolean {
-  return alg === "RS256" || alg === "RS512";
+function isAlgorithmAllowed(alg: string): alg is keyof typeof RSA_ALGORITHM_HASH {
+  return alg in RSA_ALGORITHM_HASH;
 }

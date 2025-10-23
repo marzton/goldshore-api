@@ -1,73 +1,68 @@
+import { Hono } from "hono";
+import type { MiddlewareHandler } from "hono";
 import { corsHeaders } from "./lib/cors";
-import { ok, unauthorized, notFound, serverError } from "./lib/util";
-import { requireAccess } from "./lib/access";
+import { requireAccess, type AccessResult } from "./lib/access";
+import { bad, ok, unauthorized } from "./lib/util";
 import type { Env } from "./types";
 
-import { getQuote, getOHLC } from "./handlers/market";
-import { getOrders, createOrder } from "./handlers/broker";
-import { headlines } from "./handlers/news";
-import { listFilings } from "./handlers/edgar";
-import { ytSearch } from "./handlers/youtube";
-import { generateReport, getReport } from "./handlers/reports";
-import { postBacktest, getBacktest } from "./handlers/backtests";
+const app = new Hono<{ Bindings: Env; Variables: { cors: Headers; access?: AccessResult } }>();
 
-export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
-    const url = new URL(req.url);
-    const cors = corsHeaders(env, req);
+app.use("*", async (c, next) => {
+  const cors = corsHeaders(c.env, c.req.raw);
+  c.set("cors", cors);
 
-    if (req.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: cors });
-    }
-
-    if (url.pathname === "/health") {
-      return ok({ ok: true, service: "goldshore-api", time: new Date().toISOString() }, cors);
-    }
-
-    if (url.pathname.startsWith("/v1/")) {
-      if (!(await requireAccess(req))) {
-        return unauthorized(cors);
-      }
-
-      try {
-        if (url.pathname === "/v1/whoami") {
-          const email = req.headers.get("CF-Access-Authenticated-User-Email") || null;
-          return ok({ ok: true, email }, cors);
-        }
-
-        if (url.pathname === "/v1/market/quote") return getQuote(env, url, cors);
-        if (url.pathname === "/v1/market/ohlc") return getOHLC(env, url, cors);
-
-        if (url.pathname === "/v1/broker/orders" && req.method === "GET") return getOrders(env, url, cors);
-        if (url.pathname === "/v1/broker/orders" && req.method === "POST") return createOrder(env, req, cors);
-
-        if (url.pathname === "/v1/news/headlines") return headlines(env, url, cors);
-        if (url.pathname === "/v1/edgar/filings") return listFilings(env, url, cors);
-
-        if (url.pathname === "/v1/youtube/search") return ytSearch(env, url, cors);
-
-        if (url.pathname === "/v1/reports/generate" && req.method === "POST") return generateReport(env, req, cors);
-        if (url.pathname.startsWith("/v1/reports/") && req.method === "GET") {
-          const id = url.pathname.split("/").pop();
-          if (id) {
-            return getReport(env, id, cors);
-          }
-        }
-
-        if (url.pathname === "/v1/backtests/run" && req.method === "POST") return postBacktest(env, req, cors);
-        if (url.pathname.startsWith("/v1/backtests/") && req.method === "GET") {
-          const id = url.pathname.split("/").pop();
-          if (id) {
-            return getBacktest(env, id, cors);
-          }
-        }
-      } catch (error) {
-        return serverError(error, cors);
-      }
-
-      return notFound(cors);
-    }
-
-    return notFound(cors);
+  if (c.req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: cors });
   }
+
+  await next();
+});
+
+app.get("/health", c => {
+  const headers = c.get("cors");
+  return ok(
+    {
+      ok: true,
+      service: "api-worker",
+      time: new Date().toISOString()
+    },
+    headers
+  );
+});
+
+const ensureAccess: MiddlewareHandler<{ Bindings: Env; Variables: { cors: Headers; access?: AccessResult } }> = async (
+  c,
+  next
+) => {
+  const result = await requireAccess(c.req.raw, c.env);
+  if (!result.authorized) {
+    const headers = new Headers(c.get("cors"));
+    headers.set("WWW-Authenticate", 'Bearer realm="Cloudflare Access"');
+    return unauthorized(headers);
+  }
+
+  c.set("access", result);
+  await next();
 };
+
+app.use("/trade", ensureAccess);
+
+app.post("/trade", async c => {
+  const headers = c.get("cors");
+  const sharedSecret = c.env.TRADE_API_TOKEN;
+  const authHeader = c.req.header("authorization");
+
+  if (!sharedSecret) {
+    return bad("Trading is not configured on this deployment.", 503, headers);
+  }
+
+  if (!authHeader || authHeader !== `Bearer ${sharedSecret}`) {
+    const responseHeaders = new Headers(headers);
+    responseHeaders.set("WWW-Authenticate", 'Bearer realm="Goldshore API"');
+    return unauthorized(responseHeaders);
+  }
+
+  return ok({ status: "ok" }, headers);
+});
+
+export default app;
