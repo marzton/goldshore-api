@@ -105,6 +105,30 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
     return false;
   }
 
+  let signature: Uint8Array | null = null;
+  try {
+    signature = base64UrlToUint8Array(parts[2]);
+  } catch (error) {
+    console.error("invalid access token signature", error);
+    return false;
+  }
+  const signature = (() => {
+    try {
+      return base64UrlToUint8Array(parts[2]);
+    } catch (error) {
+      console.error("invalid access token signature", error);
+      return null;
+    }
+  })();
+
+  if (!signature) {
+    return false;
+  }
+
+  if (!signature) {
+    return false;
+  }
+
   const normalizedSignature =
     verifyParams.name === "ECDSA" ? convertJoseSignatureToDer(signature) : signature;
   const normalizedSignature = normalizeSignature(signature, key, verifyParams);
@@ -113,6 +137,9 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
   }
 
   try {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(`${parts[0]}.${parts[1]}`);
+
     return await crypto.subtle.verify(verifyParams, key, normalizedSignature, data);
   } catch (error) {
     console.error("access token verification failed", error);
@@ -125,6 +152,14 @@ async function getKey(kid: string, alg: string, config: AccessConfig): Promise<C
   const cacheKey = getCacheKey(kid, alg);
   const isRsa = RSA_HASH_BY_ALG.has(alg);
 
+  const cacheValid = cache.expiresAt > Date.now();
+  if (cacheValid && cache.keys.has(kid)) {
+    return cache.keys.get(kid);
+  }
+
+  const forceRefresh = cacheValid && !cache.keys.has(kid);
+  await loadJwks(cache, config, forceRefresh);
+  return cache.keys.get(kid);
   if (cache.expiresAt > Date.now() && cache.keys.has(cacheKey)) {
     return cache.keys.get(cacheKey);
   }
