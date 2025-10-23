@@ -113,8 +113,6 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 async function getKey(kid: string, config: AccessConfig): Promise<CryptoKey | undefined> {
   const cache = getCache(config.jwksUrl);
   const now = Date.now();
-
-  const now = Date.now();
   const cacheValid = cache.expiresAt > now;
   const cachedKey = cache.keys.get(kid);
   if (cacheValid && cachedKey) {
