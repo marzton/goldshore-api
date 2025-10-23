@@ -1,12 +1,6 @@
 {
   "name": "goldshore-api",
   "main": "src/index.ts",
-  "compatibility_date": "2025-04-01",
-  "routes": [{ "pattern": "api.goldshore.org/*", "zone_name": "goldshore.org" }],
-  "kv_namespaces": [{ "binding": "KV_CACHE", "id": "578fc33519014f418bd9712c61f593db" }],
-  "d1_databases": [{ "binding": "DB", "database_name": "goldshore_db", "database_id": "33b71eca-4987-4a0c-8721-c1c777b8b6a3" }],
-  "r2_buckets": [{ "binding": "R2", "bucket_name": "goldshore-reports" }],
-  "queues": { "producers": [{ "binding": "JOBS", "queue": "jobs" }] },
   "compatibility_date": "2025-10-19",
   "routes": [
     {
