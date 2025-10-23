@@ -528,7 +528,7 @@ function curveHash(curve: EcNamedCurve | undefined): HashName {
 
 function normalizeIssuer(value: string): string {
   let end = value.length;
-  while (end > 0 && value.charCodeAt(end - 1) === 0x2f) {
+  while (end > 0 && value[end - 1] === "/") {
     end -= 1;
   }
 
