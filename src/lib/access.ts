@@ -152,12 +152,22 @@ async function getKey(kid: string, alg: string, config: AccessConfig): Promise<C
   const cacheKey = getCacheKey(kid, alg);
   const isRsa = RSA_HASH_BY_ALG.has(alg);
 
-  const cacheValid = cache.expiresAt > Date.now();
-  if (cacheValid && cache.keys.has(kid)) {
-    return cache.keys.get(kid);
+  const now = Date.now();
+  const cacheValid = cache.expiresAt > now;
+  const desiredKeyType = cacheKeyTypeFromAlg(alg);
+  if (cacheValid) {
+    const cached = getCachedKey(cache, kid, desiredKeyType);
+    if (cached) {
+      return cached;
+    }
   }
 
-  const forceRefresh = cacheValid && !cache.keys.has(kid);
+  const missingKeyId = getMissingKeyId(kid, alg);
+  const missingUntil = cache.missing.get(missingKeyId);
+  const missingValid = typeof missingUntil === "number" && missingUntil > now;
+  const hasJwk = cacheValid ? cache.jwks.has(kid) : false;
+  const forceRefresh = cacheValid && !hasJwk && !missingValid;
+
   await loadJwks(cache, config, forceRefresh);
   return cache.keys.get(kid);
   if (cache.expiresAt > Date.now() && cache.keys.has(cacheKey)) {
@@ -306,6 +316,7 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, forceReload = fal
         cache.missingKids.clear();
       } else if (cache.keys.size === 0) {
         cache.expiresAt = 0;
+        cache.jwks = jwkMap;
       }
     })().catch((error) => {
       cache.inflight = null;
