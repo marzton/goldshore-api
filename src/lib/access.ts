@@ -35,20 +35,21 @@ type SupportedImportParams =
   | { name: "RSASSA-PKCS1-v1_5"; hash: { name: HashName } }
   | { name: "ECDSA"; namedCurve: EcNamedCurve };
 
-type VerifyParams =
-  | { name: "RSASSA-PKCS1-v1_5" }
-  | { name: "ECDSA"; hash: { name: HashName } };
+type VerifyContext =
+  | { params: { name: "RSASSA-PKCS1-v1_5" } }
+  | { params: { name: "ECDSA"; hash: { name: HashName } }; namedCurve: EcNamedCurve };
 
 type KeyCache = {
-  keys: Map<string, Map<string, CryptoKey>>;
-  jwks: Map<string, AccessJwk>;
+  keys: Map<string, CryptoKey>;
+  jwkByKid: Map<string, AccessJwk>;
   expiresAt: number;
   inflight: Promise<void> | null;
-  missing: Map<string, number>;
+  missingKids: Map<string, number>;
 };
 
 const ALLOWED_ALGORITHMS = new Set(["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]);
 const keyCaches = new Map<string, KeyCache>();
+const NEGATIVE_CACHE_TTL_MS = 60 * 1000;
 
 export async function requireAccess(req: Request, env?: AccessEnvironment): Promise<boolean> {
   const jwt = req.headers.get("CF-Access-Jwt-Assertion");
@@ -79,7 +80,7 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 
   let key: CryptoKey | undefined;
   try {
-    key = await getKey(header.kid, header.alg, config);
+    key = await getKey(header.kid, config, header.alg);
   } catch (error) {
     console.error("failed to load access signing keys", error);
     return false;
@@ -89,97 +90,87 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 
   const encoder = new TextEncoder();
   const data = encoder.encode(`${parts[0]}.${parts[1]}`);
-  const signature = decodeSignature(parts[2]);
-  if (!signature || signature.length === 0) {
-    return false;
-  }
+  let signature = base64UrlToUint8Array(parts[2]);
 
-  const verifyParams = getVerifyParams(key);
-  if (!verifyParams) {
+  const verifyContext = getVerifyContext(key);
+  if (!verifyContext) {
     console.error("unsupported key algorithm", key.algorithm);
     return false;
   }
 
-  const normalizedSignature = normalizeSignature(signature, key, verifyParams);
-  if (!normalizedSignature) {
-    return false;
+  if ("namedCurve" in verifyContext) {
+    try {
+      signature = ieeeP1363ToDer(signature);
+    } catch (error) {
+      console.error("failed to convert ecdsa signature", error);
+      return false;
+    }
   }
 
   try {
-    return await crypto.subtle.verify(verifyParams, key, normalizedSignature, data);
+    return await crypto.subtle.verify(verifyContext.params, key, signature, data);
   } catch (error) {
     console.error("access token verification failed", error);
     return false;
   }
 }
 
-async function getKey(kid: string, alg: string | undefined, config: AccessConfig): Promise<CryptoKey | undefined> {
+async function getKey(
+  kid: string,
+  config: AccessConfig,
+  alg?: string,
+): Promise<CryptoKey | undefined> {
   const cache = getCache(config.jwksUrl);
-
   const now = Date.now();
-  const cacheValid = cache.expiresAt > now;
-  const desiredKeyType = cacheKeyTypeFromAlg(alg);
-  if (cacheValid) {
-    const cached = getCachedKey(cache, kid, desiredKeyType);
-    if (cached) {
-      return cached;
+
+  if (cache.expiresAt > now && cache.keys.has(kid)) {
+    return cache.keys.get(kid);
+  }
+
+  const hasKey = cache.keys.has(kid);
+  const lastMiss = cache.missingKids.get(kid) ?? 0;
+  const isNegativeStale = now - lastMiss >= NEGATIVE_CACHE_TTL_MS;
+  const shouldForceReload = !hasKey && (cache.expiresAt <= now || isNegativeStale);
+
+  if (shouldForceReload) {
+    await loadJwks(cache, config, true);
+  } else {
+    await loadJwks(cache, config);
+  }
+
+  let key = cache.keys.get(kid);
+  key = await ensureKeyForAlgorithm(cache, kid, key, alg);
+
+  if (key) {
+    cache.missingKids.delete(kid);
+  } else if (!hasKey) {
+    if (lastMiss === 0) {
+      cache.missingKids.set(kid, now);
+    } else if (isNegativeStale) {
+      cache.missingKids.set(kid, Date.now());
     }
   }
 
-  const missingKeyId = getMissingKeyId(kid, alg);
-  const missingUntil = cache.missing.get(missingKeyId);
-  const missingValid = typeof missingUntil === "number" && missingUntil > now;
-  const hasJwk = cacheValid ? cache.jwks.has(kid) : false;
-  const forceRefresh = cacheValid && !hasJwk && !missingValid;
-
-  await loadJwks(cache, config, forceRefresh);
-
-  const refreshedKey = getCachedKey(cache, kid, desiredKeyType);
-  if (refreshedKey) {
-    cache.missing.delete(missingKeyId);
-    return refreshedKey;
-  }
-
-  const jwk = cache.jwks.get(kid);
-  if (!jwk) {
-    setMissing(cache, missingKeyId);
-    return undefined;
-  }
-
-  const importAlgorithm = resolveImportAlgorithm(jwk, alg);
-  if (!importAlgorithm) {
-    setMissing(cache, missingKeyId);
-    return undefined;
-  }
-
-  try {
-    const cryptoKey = await crypto.subtle.importKey("jwk", jwk, importAlgorithm, false, ["verify"]);
-    let keyMap = cache.keys.get(kid);
-    if (!keyMap) {
-      keyMap = new Map();
-      cache.keys.set(kid, keyMap);
-    }
-    keyMap.set(cacheKeyType(importAlgorithm), cryptoKey);
-    cache.missing.delete(missingKeyId);
-    return cryptoKey;
-  } catch (error) {
-    console.error("failed to import jwk", kid, error);
-    setMissing(cache, missingKeyId);
-    return undefined;
-  }
+  return key;
 }
 
 function getCache(url: string): KeyCache {
   let cache = keyCaches.get(url);
   if (!cache) {
-    cache = { keys: new Map(), jwks: new Map(), expiresAt: 0, inflight: null, missing: new Map() };
+    cache = {
+      keys: new Map(),
+      jwkByKid: new Map(),
+      expiresAt: 0,
+      inflight: null,
+      missingKids: new Map(),
+    };
     keyCaches.set(url, cache);
   }
   return cache;
 }
 
-async function loadJwks(cache: KeyCache, config: AccessConfig, force = false): Promise<void> {
-  if (!force && cache.expiresAt > Date.now() && cache.keys.size > 0) {
+async function loadJwks(cache: KeyCache, config: AccessConfig, forceReload = false): Promise<void> {
+  if (!forceReload && cache.expiresAt > Date.now() && cache.keys.size > 0) {
     return;
   }
 
@@ -196,16 +187,15 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, force = false): P
 
       const body = await res.json<{ keys?: JsonWebKey[] }>();
       const keys = (body.keys ?? []) as AccessJwk[];
-      const jwkMap = new Map<string, AccessJwk>();
-      const imported = new Map<string, Map<string, CryptoKey>>();
+      const imported = new Map<string, CryptoKey>();
+      const jwkByKid = new Map<string, AccessJwk>();
 
       await Promise.all(
         keys.map(async (jwk) => {
           if (!jwk.kid) return;
 
-          jwkMap.set(jwk.kid, jwk);
-
-          const algorithm = resolveImportAlgorithm(jwk, jwk.alg);
+          jwkByKid.set(jwk.kid, jwk);
+          const algorithm = getImportAlgorithm(jwk);
           if (!algorithm) return;
 
           try {
@@ -220,25 +210,14 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, force = false): P
         }),
       );
 
-      if (jwkMap.size > 0) {
-        const nextKeys = new Map<string, Map<string, CryptoKey>>();
-        for (const [kid, keyMap] of cache.keys) {
-          if (jwkMap.has(kid)) {
-            nextKeys.set(kid, new Map(keyMap));
-          }
-        }
-        for (const [kid, keyMap] of imported) {
-          const existing = nextKeys.get(kid) ?? new Map<string, CryptoKey>();
-          for (const [keyType, key] of keyMap) {
-            existing.set(keyType, key);
-          }
-          nextKeys.set(kid, existing);
-        }
+      if (jwkByKid.size > 0) {
+        cache.jwkByKid = jwkByKid;
+      }
 
-        cache.keys = nextKeys;
-        cache.jwks = jwkMap;
+      if (imported.size > 0) {
+        cache.keys = imported;
         cache.expiresAt = Date.now() + JWKS_CACHE_TTL_MS;
-        clearMissingForKids(cache, jwkMap.keys());
+        cache.missingKids.clear();
       } else if (cache.keys.size === 0) {
         cache.expiresAt = 0;
         cache.jwks = jwkMap;
@@ -264,14 +243,10 @@ function resolveConfig(env?: AccessEnvironment): AccessConfig {
   return { audience, issuer, jwksUrl };
 }
 
-function resolveImportAlgorithm(jwk: AccessJwk, tokenAlg?: string): SupportedImportParams | null {
+function getImportAlgorithm(jwk: AccessJwk, overrideHash?: HashName): SupportedImportParams | null {
   if (jwk.kty === "RSA") {
-    const hash = rsaHash(tokenAlg ?? jwk.alg);
-    if (!hash) {
-      return null;
-    }
-
-    return { name: "RSASSA-PKCS1-v1_5", hash: { name: hash } };
+    const hashName = overrideHash ?? rsaHashFromAlg(jwk.alg) ?? "SHA-256";
+    return { name: "RSASSA-PKCS1-v1_5", hash: { name: hashName } };
   }
 
   if (jwk.kty === "EC" && typeof jwk.crv === "string") {
@@ -284,107 +259,61 @@ function resolveImportAlgorithm(jwk: AccessJwk, tokenAlg?: string): SupportedImp
   return null;
 }
 
-function cacheKeyType(params: SupportedImportParams): string {
-  if (params.name === "RSASSA-PKCS1-v1_5") {
-    return `RSA:${params.hash.name}`;
+async function ensureKeyForAlgorithm(
+  cache: KeyCache,
+  kid: string,
+  key: CryptoKey | undefined,
+  alg?: string,
+): Promise<CryptoKey | undefined> {
+  if (!key || !alg) {
+    return key;
   }
 
-  return `EC:${params.namedCurve}`;
-}
-
-function cacheKeyTypeFromAlg(alg: string | undefined): string | null {
-  if (!alg) {
-    return null;
+  const expectedHash = rsaHashFromAlg(alg);
+  if (!expectedHash) {
+    return key;
   }
 
-  if (alg.startsWith("RS")) {
-    const hash = rsaHash(alg);
-    return hash ? `RSA:${hash}` : null;
+  const algorithm = key.algorithm as { name?: string; hash?: { name?: string } };
+  if (algorithm.name !== "RSASSA-PKCS1-v1_5") {
+    return key;
   }
 
-  if (alg.startsWith("ES")) {
-    const curve = curveForAlg(alg);
-    return curve ? `EC:${curve}` : null;
+  const currentHash = algorithm.hash?.name?.toUpperCase();
+  if (currentHash === expectedHash) {
+    return key;
   }
 
-  return null;
-}
-
-function getCachedKey(cache: KeyCache, kid: string, keyType: string | null): CryptoKey | undefined {
-  const keyMap = cache.keys.get(kid);
-  if (!keyMap) {
-    return undefined;
+  const jwk = cache.jwkByKid.get(kid);
+  if (!jwk) {
+    return key;
   }
 
-  if (keyType && keyMap.has(keyType)) {
-    return keyMap.get(keyType);
+  const importAlgorithm = getImportAlgorithm(jwk, expectedHash);
+  if (!importAlgorithm) {
+    return key;
   }
 
-  const iterator = keyMap.values().next();
-  return iterator.done ? undefined : iterator.value;
-}
-
-function getMissingKeyId(kid: string, alg: string | undefined): string {
-  return `${kid}:${alg ?? ""}`;
-}
-
-function setMissing(cache: KeyCache, missingKeyId: string): void {
-  cache.missing.set(missingKeyId, Date.now() + JWKS_CACHE_TTL_MS);
-}
-
-function clearMissingForKids(cache: KeyCache, kids: Iterable<string>): void {
-  const kidSet = new Set<string>(Array.from(kids));
-  if (kidSet.size === 0) {
-    return;
-  }
-
-  for (const missingKey of Array.from(cache.missing.keys())) {
-    const separatorIndex = missingKey.indexOf(":");
-    const keyKid = separatorIndex === -1 ? missingKey : missingKey.slice(0, separatorIndex);
-    if (kidSet.has(keyKid)) {
-      cache.missing.delete(missingKey);
-    }
+  try {
+    const cryptoKey = await crypto.subtle.importKey("jwk", jwk, importAlgorithm, false, ["verify"]);
+    cache.keys.set(kid, cryptoKey);
+    return cryptoKey;
+  } catch (error) {
+    console.error("failed to re-import jwk", kid, error);
+    return key;
   }
 }
 
-function rsaHash(algorithm?: string): HashName | null {
-  switch (algorithm) {
-    case "RS256":
-      return "SHA-256";
-    case "RS384":
-      return "SHA-384";
-    case "RS512":
-      return "SHA-512";
-    case undefined:
-      return "SHA-256";
-    default:
-      return null;
-  }
-}
-
-function curveForAlg(alg?: string): EcNamedCurve | null {
-  switch (alg) {
-    case "ES256":
-      return "P-256";
-    case "ES384":
-      return "P-384";
-    case "ES512":
-      return "P-521";
-    default:
-      return null;
-  }
-}
-
-function getVerifyParams(key: CryptoKey): VerifyParams | null {
+function getVerifyContext(key: CryptoKey): VerifyContext | null {
   const algorithm = key.algorithm as { name: string; namedCurve?: EcNamedCurve };
 
   if (algorithm.name === "RSASSA-PKCS1-v1_5") {
-    return { name: "RSASSA-PKCS1-v1_5" };
+    return { params: { name: "RSASSA-PKCS1-v1_5" } };
   }
 
   if (algorithm.name === "ECDSA") {
     const hashName = curveHash(algorithm.namedCurve);
-    return { name: "ECDSA", hash: { name: hashName } };
+    return { params: { name: "ECDSA", hash: { name: hashName } }, namedCurve: algorithm.namedCurve ?? "P-256" };
   }
 
   return null;
@@ -417,6 +346,76 @@ function base64UrlToUint8Array(value: string): Uint8Array {
   }
 
   return bytes;
+}
+
+function ieeeP1363ToDer(signature: Uint8Array): Uint8Array {
+  if (signature.length % 2 !== 0) {
+    throw new Error("invalid ecdsa signature length");
+  }
+
+  const half = signature.length / 2;
+  const r = normalizeInteger(signature.slice(0, half));
+  const s = normalizeInteger(signature.slice(half));
+
+  const rLen = encodeDerLength(r.length);
+  const sLen = encodeDerLength(s.length);
+  const sequenceLength = 1 + rLen.length + r.length + 1 + sLen.length + s.length;
+  const seqLen = encodeDerLength(sequenceLength);
+
+  const result = new Uint8Array(1 + seqLen.length + sequenceLength);
+  let offset = 0;
+  result[offset++] = 0x30;
+  result.set(seqLen, offset);
+  offset += seqLen.length;
+
+  result[offset++] = 0x02;
+  result.set(rLen, offset);
+  offset += rLen.length;
+  result.set(r, offset);
+  offset += r.length;
+
+  result[offset++] = 0x02;
+  result.set(sLen, offset);
+  offset += sLen.length;
+  result.set(s, offset);
+
+  return result;
+}
+
+function normalizeInteger(bytes: Uint8Array): Uint8Array {
+  let offset = 0;
+  while (offset < bytes.length && bytes[offset] === 0) {
+    offset += 1;
+  }
+
+  let normalized = bytes.slice(offset);
+  if (normalized.length === 0) {
+    normalized = new Uint8Array([0]);
+  }
+
+  if (normalized[0] & 0x80) {
+    const extended = new Uint8Array(normalized.length + 1);
+    extended[0] = 0;
+    extended.set(normalized, 1);
+    return extended;
+  }
+
+  return normalized;
+}
+
+function encodeDerLength(length: number): Uint8Array {
+  if (length < 0x80) {
+    return new Uint8Array([length]);
+  }
+
+  const bytes: number[] = [];
+  let value = length;
+  while (value > 0) {
+    bytes.unshift(value & 0xff);
+    value >>= 8;
+  }
+
+  return new Uint8Array([0x80 | bytes.length, ...bytes]);
 }
 
 function isAudienceValid(aud: AccessPayload["aud"], expected: string): boolean {
@@ -538,12 +537,29 @@ function curveHash(curve: EcNamedCurve | undefined): HashName {
   }
 }
 
-function normalizeIssuer(value: string): string {
-  let result = value;
-  while (result.endsWith("/")) {
-    result = result.slice(0, -1);
+function rsaHashFromAlg(alg?: string): HashName | null {
+  if (!alg) return null;
+
+  switch (alg.toUpperCase()) {
+    case "RS384":
+      return "SHA-384";
+    case "RS512":
+      return "SHA-512";
+    case "RS256":
+      return "SHA-256";
+    default:
+      return null;
   }
-  return result;
+}
+
+function normalizeIssuer(value: string): string {
+  let end = value.length;
+
+  while (end > 0 && value.charCodeAt(end - 1) === 47 /* '/' */) {
+    end -= 1;
+  }
+
+  return end === value.length ? value : value.slice(0, end);
 }
 
 export default requireAccess;
