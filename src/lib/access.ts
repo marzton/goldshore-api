@@ -107,7 +107,13 @@ async function verifyAssertion(token: string, env: Env): Promise<AccessIdentity 
 
     const data = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
     const signature = base64UrlToBytes(parts[2]);
-    const valid = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", verifier, signature, data);
+    const signatureArray = new Uint8Array(signature);
+    const valid = await crypto.subtle.verify(
+      "RSASSA-PKCS1-v1_5",
+      verifier,
+      signatureArray.buffer.slice(0),
+      data
+    );
     if (!valid) {
       return undefined;
     }
