@@ -32,6 +32,8 @@ type EcNamedCurve = "P-256" | "P-384" | "P-521";
 
 type AccessJwk = JsonWebKey & { kid?: string; kty?: string; crv?: string; alg?: string };
 
+type HashAlgorithm = "RS256" | "RS384" | "RS512" | "ES256" | "ES384" | "ES512";
+type RsaAlgorithm = "RS256" | "RS384" | "RS512";
 type SupportedImportParams =
   | { name: "RSASSA-PKCS1-v1_5"; hash: { name: HashName } }
   | { name: "ECDSA"; namedCurve: EcNamedCurve };
@@ -40,6 +42,7 @@ type VerifyParams =
   | { name: "RSASSA-PKCS1-v1_5" }
   | { name: "ECDSA"; hash: { name: HashName } };
 
+type CachedKeyMap = Map<string, CryptoKey>;
 type KeyCache = {
   keys: Map<string, CryptoKey>;
   jwks: Map<string, AccessJwk>;
@@ -48,6 +51,18 @@ type KeyCache = {
   missing: Map<string, number>;
 };
 
+const ALLOWED_ALGORITHMS = new Set<HashAlgorithm>(["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]);
+const RSA_HASH_ALGORITHMS: Record<RsaAlgorithm, HashName> = {
+  RS256: "SHA-256",
+  RS384: "SHA-384",
+  RS512: "SHA-512",
+};
+const CURVE_TO_ALGORITHM: Record<EcNamedCurve, "ES256" | "ES384" | "ES512"> = {
+  "P-256": "ES256",
+  "P-384": "ES384",
+  "P-521": "ES512",
+};
+const DEFAULT_ALGORITHM_KEY = "__default__";
 const ALLOWED_ALGORITHMS = new Set(["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]);
 const RSA_HASH_BY_ALG = new Map<string, HashName>([
   ["RS256", "SHA-256"],
@@ -354,11 +369,100 @@ function getImportAlgorithm(jwk: AccessJwk, hashName?: HashName): SupportedImpor
   if (jwk.kty === "EC" && typeof jwk.crv === "string") {
     const curve = jwk.crv as EcNamedCurve;
     if (curve === "P-256" || curve === "P-384" || curve === "P-521") {
-      return { name: "ECDSA", namedCurve: curve };
+      const algorithm = CURVE_TO_ALGORITHM[curve];
+      return [
+        {
+          params: { name: "ECDSA", namedCurve: curve },
+          algorithms: algorithm ? [algorithm] : [],
+        },
+      ];
     }
   }
 
-  return null;
+  return [];
+}
+
+function getRsaAlgorithms(jwk: AccessJwk, requestedAlgorithm?: HashAlgorithm): RsaAlgorithm[] {
+  const supported: RsaAlgorithm[] = ["RS256", "RS384", "RS512"];
+  const normalizedRequested = toRsaAlgorithm(requestedAlgorithm);
+  const normalizedJwkAlg = toRsaAlgorithm(typeof jwk.alg === "string" ? jwk.alg : undefined);
+
+  const algorithms = new Set<RsaAlgorithm>();
+
+  if (normalizedRequested) {
+    algorithms.add(normalizedRequested);
+  }
+
+  if (normalizedJwkAlg) {
+    algorithms.add(normalizedJwkAlg);
+  }
+
+  if (algorithms.size === 0) {
+    for (const algorithm of supported) {
+      algorithms.add(algorithm);
+    }
+  }
+
+  return Array.from(algorithms.values());
+}
+
+function toRsaAlgorithm(value: string | undefined): RsaAlgorithm | undefined {
+  if (!value) return undefined;
+
+  switch (value.toUpperCase()) {
+    case "RS256":
+      return "RS256";
+    case "RS384":
+      return "RS384";
+    case "RS512":
+      return "RS512";
+    default:
+      return undefined;
+  }
+}
+
+function storeImportedKey(
+  imported: Map<string, CachedKeyMap>,
+  kid: string,
+  algorithms: string[],
+  key: CryptoKey,
+): void {
+  let cached = imported.get(kid);
+  if (!cached) {
+    cached = new Map();
+    imported.set(kid, cached);
+  }
+
+  if (algorithms.length === 0) {
+    cached.set(DEFAULT_ALGORITHM_KEY, key);
+    return;
+  }
+
+  for (const algorithm of algorithms) {
+    cached.set(algorithm, key);
+  }
+
+  if (!cached.has(DEFAULT_ALGORITHM_KEY)) {
+    cached.set(DEFAULT_ALGORITHM_KEY, key);
+  }
+}
+
+function selectKey(cached: CachedKeyMap | undefined, algorithm: string | undefined): CryptoKey | undefined {
+  if (!cached) return undefined;
+
+  if (algorithm && cached.has(algorithm)) {
+    return cached.get(algorithm);
+  }
+
+  if (cached.has(DEFAULT_ALGORITHM_KEY)) {
+    return cached.get(DEFAULT_ALGORITHM_KEY);
+  }
+
+  for (const key of cached.values()) {
+    return key;
+  }
+
+  return undefined;
 }
 
 function getImportAlgorithmForAlg(jwk: AccessJwk, alg: string): SupportedImportParams | null {
