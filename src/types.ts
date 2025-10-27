@@ -3,6 +3,9 @@ export interface Env {
   DB: D1Database;
   R2: R2Bucket;
   JOBS: Queue;
+  ASSETS?: {
+    fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+  };
 
   ACCESS_AUDIENCE?: string;
   ACCESS_ISSUER?: string;
@@ -20,4 +23,5 @@ export interface Env {
   YOUTUBE_API_KEY?: string;
   GOOGLE_API_KEY?: string;
   GOOGLE_CSE_ID?: string;
+  AGENT_SYSTEM_PROMPT?: string;
 }
