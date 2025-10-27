@@ -277,6 +277,45 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, forceReload: bool
   }
 }
 
+async function importRsaKeyForAllHashes(
+  jwk: AccessJwk,
+  rsaKeys: Map<string, Map<HashName, CryptoKey>>,
+): Promise<void> {
+  if (!jwk.kid) {
+    return;
+  }
+
+  let byHash = rsaKeys.get(jwk.kid);
+  if (!byHash) {
+    byHash = new Map<HashName, CryptoKey>();
+    rsaKeys.set(jwk.kid, byHash);
+  }
+
+  let imported = false;
+  let lastError: unknown;
+
+  for (const hashName of RSA_HASHES) {
+    try {
+      const cryptoKey = await crypto.subtle.importKey(
+        "jwk",
+        jwk,
+        { name: "RSASSA-PKCS1-v1_5", hash: { name: hashName } },
+        false,
+        ["verify"],
+      );
+      byHash.set(hashName, cryptoKey);
+      imported = true;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (!imported) {
+    rsaKeys.delete(jwk.kid);
+    console.error("failed to import rsa jwk", jwk.kid, lastError);
+  }
+}
+
 function resolveConfig(env?: AccessEnvironment): AccessConfig {
   const audience = env?.ACCESS_AUDIENCE?.trim() || DEFAULT_ACCESS_AUDIENCE;
   const issuer = normalizeIssuer(env?.ACCESS_ISSUER || DEFAULT_ACCESS_ISSUER);
