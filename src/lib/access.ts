@@ -87,10 +87,6 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 
   if (!key) return false;
 
-  const encoder = new TextEncoder();
-  const data = encoder.encode(`${parts[0]}.${parts[1]}`);
-  const signature = base64UrlToUint8Array(parts[2]);
-
   const verifyParams = getVerifyParams(key);
   if (!verifyParams) {
     console.error("unsupported key algorithm", key.algorithm);
@@ -112,6 +108,25 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
 
 async function getKey(kid: string, config: AccessConfig, alg?: string): Promise<CryptoKey | undefined> {
   const cache = getCache(config.jwksUrl);
+  const cacheKey = createCacheKey(kid, alg);
+
+  const cacheValid = cache.expiresAt > Date.now();
+  if (cacheValid && cache.keys.has(cacheKey)) {
+    return cache.keys.get(cacheKey);
+  }
+
+  const forceRefresh = cacheValid && !cache.jwks.has(kid);
+  await loadJwks(cache, config, forceRefresh);
+
+  const cached = cache.keys.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const jwk = cache.jwks.get(kid);
+  if (!jwk) {
+    return undefined;
+  }
 
   if (cache.expiresAt > Date.now() && cache.keys.has(kid)) {
     const key = cache.keys.get(kid);
@@ -177,12 +192,14 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, force = false): P
 
           try {
             const cryptoKey = await crypto.subtle.importKey("jwk", jwk, algorithm, false, ["verify"]);
-            imported.set(jwk.kid, cryptoKey);
+            imported.set(createCacheKey(jwk.kid, jwk.alg), cryptoKey);
           } catch (error) {
             console.error("failed to import jwk", jwk.kid, error);
           }
         }),
       );
+
+      cache.jwks = jwks;
 
       if (imported.size > 0) {
         cache.keys = imported;
@@ -466,8 +483,53 @@ function curveHash(curve: EcNamedCurve | undefined): HashName {
   }
 }
 
+function rsaHash(algorithm: string | undefined): HashName | null {
+  if (!algorithm) {
+    return "SHA-256";
+  }
+
+  switch (algorithm.toUpperCase()) {
+    case "RS256":
+      return "SHA-256";
+    case "RS384":
+      return "SHA-384";
+    case "RS512":
+      return "SHA-512";
+    default:
+      return null;
+  }
+}
+
+function createCacheKey(kid: string, alg: string | undefined): string {
+  const hash = rsaHash(alg);
+  return hash ? `${kid}:${hash}` : kid;
+}
+
 function normalizeIssuer(value: string): string {
-  return value.replace(/\/+$/, "");
+  let end = value.length;
+
+  while (end > 0 && value.charCodeAt(end - 1) === 0x2f) {
+    end -= 1;
+  }
+
+  while (end > 0 && value.charCodeAt(end - 1) === 0x2f /* '/' */) {
+    end -= 1;
+  }
+  return end === value.length ? value : value.slice(0, end);
+  if (end === value.length) {
+    return value;
+  }
+
+  return value.slice(0, end);
+  while (end > 0 && value.charCodeAt(end - 1) === 0x2f) {
+    end -= 1;
+  }
+
+  if (end === value.length) {
+    return value;
+  }
+
+  return value.slice(0, end);
 }
 
 export default requireAccess;
