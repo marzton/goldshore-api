@@ -586,6 +586,28 @@ function encodeDerLength(length: number): Uint8Array {
   return result;
 }
 
+function rsaHash(algorithm: string | undefined): HashName | null {
+  if (!algorithm) {
+    return "SHA-256";
+  }
+
+  switch (algorithm.toUpperCase()) {
+    case "RS256":
+      return "SHA-256";
+    case "RS384":
+      return "SHA-384";
+    case "RS512":
+      return "SHA-512";
+    default:
+      return null;
+  }
+}
+
+function createCacheKey(kid: string, alg: string | undefined): string {
+  const hash = rsaHash(alg);
+  return hash ? `${kid}:${hash}` : kid;
+}
+
 function normalizeIssuer(value: string): string {
   let end = value.length;
 
