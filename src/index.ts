@@ -5,6 +5,8 @@ import { handleCodexAgent } from "./agent/codex-agent";
 import { handleAutoApply } from "./agent/autoapply";
 import { handleStatus } from "./agent/status";
 import { handleLogs } from "./agent/logs";
+import { handle as handleAdmin } from "./admin";
+import { handle as handleRisk } from "./risk";
 import type { Env } from "./types";
 
 const notFound = (headers: Headers): Response =>
@@ -92,6 +94,14 @@ export default {
         },
         cors
       );
+    }
+
+    if (url.pathname.startsWith("/v1/admin")) {
+      return handleAdmin(request, env, cors);
+    }
+
+    if (url.pathname.startsWith("/v1/risk")) {
+      return handleRisk(request, env, cors);
     }
 
     return notFound(cors);

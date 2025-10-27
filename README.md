@@ -71,6 +71,8 @@ artifacts live in `apps/admin/dist/` and should be published through Pages once 
 
 - [`wrangler.toml`](wrangler.toml) — deterministic worker configuration (routes, vars, compatibility date).
 - [`src/index.ts`](src/index.ts) — entry point implementing CORS, `/health`, `/status`, `/logs`, `/codex-agent`, `/autoapply`, and `/v1/whoami`.
+- [`src/admin.ts`](src/admin.ts) — Access-protected CRUD endpoints for customers and subscriptions stored in D1.
+- [`src/risk.ts`](src/risk.ts) — Access-protected risk configuration, rule evaluation, and killswitch controls backed by KV.
 - [`src/lib/access.ts`](src/lib/access.ts) — Access JWT validation against Gold Shore Labs' JWKS.
 - [`public/access-denied.html`](public/access-denied.html) — Cloudflare Access identity failure landing page.
 - [`docs/desired-state.md`](docs/desired-state.md) — compliance summary of DNS, Access, and worker configuration.
@@ -89,3 +91,34 @@ artifacts live in `apps/admin/dist/` and should be published through Pages once 
    email glob `*@goldshore.org`, allow Gold Shore's GitHub organization, then fall back to deny-all.
 
 Re-running this checklist after each deploy should yield the same answers unless a deliberate change is introduced.
+
+## Admin + Risk API quickstart
+
+All admin and risk routes require a valid Cloudflare Access assertion or the `Cf-Access-Authenticated-User-Email` header. The
+following examples assume you have copied an Access JWT into `$ACCESS_TOKEN` and your user has permission to reach the worker.
+
+```bash
+# List customers
+curl -H "Cf-Access-Jwt-Assertion: $ACCESS_TOKEN" https://api.goldshore.org/v1/admin/customers
+
+# Create a subscription with features
+curl -X POST \
+  -H "Cf-Access-Jwt-Assertion: $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "name": "core",
+        "description": "Baseline membership",
+        "price": 1999,
+        "features": [
+          { "name": "alerts", "description": "Email + SMS alerts" }
+        ]
+      }' \
+  https://api.goldshore.org/v1/admin/subscriptions
+
+# Evaluate a risk metric
+curl -X POST \
+  -H "Cf-Access-Jwt-Assertion: $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "metric": "max_drawdown", "value": 3.5 }' \
+  https://api.goldshore.org/v1/risk/check
+```
