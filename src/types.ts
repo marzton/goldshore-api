@@ -26,6 +26,10 @@ export interface Env {
    * JWKS endpoint corresponding to the issuer.
    */
   ACCESS_JWKS_URL?: string;
+  /**
+   * Comma-separated list of acceptable Cloudflare Access audiences.
+   */
+  ACCESS_AUDIENCE?: string;
 
   /**
    * Legacy bindings retained for backwards compatibility. All are optional to keep the worker deployable

@@ -22,8 +22,9 @@ id = "00000000000000000000000000000002"
 
 [vars]
 CORS_ORIGINS = "https://goldshore.org,https://www.goldshore.org,https://web.goldshore.org,https://*.goldshore.org,https://*.goldshore-web.pages.dev"
-ACCESS_ISSUER = "https://goldshore.cloudflareaccess.com/cdn-cgi/access/sso/oidc/07665be501c60fa585bd8c697d77ebf86ce14f993fa7745ab52f54ad93f523fc"
-ACCESS_JWKS_URL = "https://goldshore.cloudflareaccess.com/cdn-cgi/access/sso/oidc/07665be501c60fa585bd8c697d77ebf86ce14f993fa7745ab52f54ad93f523fc/jwks"
+ACCESS_ISSUER = "https://goldshore.cloudflareaccess.com"
+ACCESS_JWKS_URL = "https://goldshore.cloudflareaccess.com/cdn-cgi/access/certs"
+ACCESS_AUDIENCE = "15b3d02e775a7c84ac87a41d671bff94da19cb968c3a07c72b087d0e2ccafaf5"
 AGENT_SYSTEM_PROMPT = ""
 SERVICE_NAME = "GoldShore Agent"
 AI_MODEL = "gpt-4o-mini"

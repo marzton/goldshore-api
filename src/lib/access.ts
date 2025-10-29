@@ -128,6 +128,20 @@ async function verifyAssertion(token: string, env: Env): Promise<AccessIdentity 
     }
   }
 
+  if (env.ACCESS_AUDIENCE) {
+    const expectedAudiences = parseExpectedAudiences(env.ACCESS_AUDIENCE);
+    if (expectedAudiences.length > 0) {
+      const tokenAudiences = extractAudienceClaim(payload.aud);
+      if (tokenAudiences.length === 0) {
+        return undefined;
+      }
+      const matches = tokenAudiences.some(aud => expectedAudiences.includes(aud));
+      if (!matches) {
+        return undefined;
+      }
+    }
+  }
+
   if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) {
     return undefined;
   }
@@ -194,4 +208,21 @@ function base64UrlToBytes(input: string): Uint8Array {
 
 function isAlgorithmAllowed(alg: string): alg is keyof typeof RSA_ALGORITHM_HASH {
   return alg in RSA_ALGORITHM_HASH;
+}
+
+function parseExpectedAudiences(raw: string): string[] {
+  return raw
+    .split(",")
+    .map(value => value.trim())
+    .filter((value): value is string => value.length > 0);
+}
+
+function extractAudienceClaim(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
+  }
+  if (typeof value === "string") {
+    return [value];
+  }
+  return [];
 }

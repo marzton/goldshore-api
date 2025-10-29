@@ -41,7 +41,7 @@ All legacy A/AAAA records (`100.2.111.41`, etc.) and circular CNAMES must be del
 - CORS: allows Gold Shore web origins, `Cf-Access-Jwt-Assertion` header permitted
 - Public metadata: `GET /health`, `GET /status`
 - Protected automation: `POST /codex-agent`, `POST /autoapply`, `GET /logs`, `GET /v1/whoami`
-- Secrets: stored via Wrangler (`wrangler secret put`) using names `ACCESS_ISSUER`, `ACCESS_JWKS_URL`, `OPENAI_API_KEY`, `SERVICE_NAME`, `AI_MODEL`, etc.
+- Secrets: stored via Wrangler (`wrangler secret put`) using names `ACCESS_ISSUER`, `ACCESS_JWKS_URL`, `ACCESS_AUDIENCE`, `OPENAI_API_KEY`, `SERVICE_NAME`, `AI_MODEL`, etc.
 
 ## Cloudflare Access
 
