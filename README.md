@@ -26,6 +26,7 @@ Set the following environment variables when running locally so the worker can v
 
 - `ACCESS_ISSUER`
 - `ACCESS_JWKS_URL`
+- `ACCESS_AUDIENCE`
 - `CORS_ORIGINS`
 
 Wrangler automatically reads these values from `wrangler.toml` in development. To impersonate an Access user locally you
@@ -43,7 +44,8 @@ commands against `http://127.0.0.1:8787`.
 ## Access enforcement
 
 - Worker routes must include the header `Cf-Access-Jwt-Assertion` which is verified against the JWKS published by
-  Cloudflare Access (`ACCESS_JWKS_URL`).
+  Cloudflare Access (`ACCESS_JWKS_URL`) and checked for the expected issuer/audience pair (`ACCESS_ISSUER`,
+  `ACCESS_AUDIENCE`).
 - The helper in `src/lib/access.ts` caches JWKS responses for five minutes to respect rate limits while staying
   responsive to rotations.
 - A branded Access denied page lives at `public/access-denied.html`; configure Access → Authentication → Custom Pages to

@@ -60,6 +60,7 @@ The following directive describes how the public web frontend and the API worker
 >    - Protected routes use Cloudflare Access policy with:
 >      - `ACCESS_ISSUER=https://goldshore.cloudflareaccess.com`
 >      - `ACCESS_JWKS_URL=https://goldshore.cloudflareaccess.com/cdn-cgi/access/certs`
+>      - `ACCESS_AUDIENCE=15b3d02e775a7c84ac87a41d671bff94da19cb968c3a07c72b087d0e2ccafaf5`
 >    - Workers verify JWT headers to restrict internal `/admin` and `/v1/private` endpoints.
 >
 > ---
@@ -74,7 +75,7 @@ The following directive describes how the public web frontend and the API worker
 >    - Root (`goldshore.org`) must CNAME to `goldshore-web.pages.dev`.
 > 3. Run Wrangler validation.
 >    - Confirm Worker binds to the `goldshore.org` zone and defines the `api.goldshore.org/*` route.
->    - Confirm environment variables exist: `CORS_ORIGINS`, `ACCESS_ISSUER`, `ACCESS_JWKS_URL`.
+>    - Confirm environment variables exist: `CORS_ORIGINS`, `ACCESS_ISSUER`, `ACCESS_JWKS_URL`, `ACCESS_AUDIENCE`.
 > 4. Auto-repair if mismatch found.
 >    - If `api.goldshore.org` is missing the route: create via `wrangler routes add`.
 >    - If DNS points to wrong origin: correct via Cloudflare API call.

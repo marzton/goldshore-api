@@ -4,6 +4,10 @@ compatibility_date = "2025-10-10"
 
 [vars]
 ENV = "production"
+# Cloudflare Access validation settings (copy from Zero Trust → Access → Application → Overview).
+ACCESS_ISSUER = "https://goldshore.cloudflareaccess.com"
+ACCESS_JWKS_URL = "https://goldshore.cloudflareaccess.com/cdn-cgi/access/certs"
+ACCESS_AUDIENCE = "15b3d02e775a7c84ac87a41d671bff94da19cb968c3a07c72b087d0e2ccafaf5"
 # Set via `wrangler secret put TRADE_API_TOKEN` to enable authenticated trading.
 
 # Add a route after DNS is set:
