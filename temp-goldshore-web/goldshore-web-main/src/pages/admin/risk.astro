@@ -1,0 +1,76 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import AdminLayout from '../../components/admin/AdminLayout.astro';
+import { buildApiUrl } from '../../lib/api';
+
+const limits = [
+  { desk: 'Falcon Ridge Capital', net: '$12M', intraday: '$4M', status: 'Within limits' },
+  { desk: 'Northwind Markets', net: '$3M', intraday: '$1M', status: 'Warning' },
+  { desk: 'Vanguard Desk', net: '$25M', intraday: '$8M', status: 'Within limits' }
+];
+
+const killSwitchEndpoint = buildApiUrl('/admin/risk/kill-switch');
+const circuitBreakerEndpoint = buildApiUrl('/admin/risk/circuit-breaker');
+const docsEndpoint = buildApiUrl('/docs');
+---
+<BaseLayout title="Admin | Risk" description="Review exposure, limits, and kill-switch controls.">
+  <AdminLayout heading="Risk" description="Stay ahead of exposure and apply controls without leaving the console.">
+    <div class="space-y-8">
+      <div class="grid gap-4 md:grid-cols-3">
+        <div class="rounded-xl border border-border/60 bg-surface/70 p-6 shadow-elev-1">
+          <p class="text-xs uppercase tracking-[0.2em] text-muted">Kill switch</p>
+          <p class="mt-3 text-sm text-muted">Immediately halt routing if limits breach or counterparties fail.</p>
+          <button
+            class="mt-4 gs-btn-primary gs-btn-sm"
+            data-endpoint={killSwitchEndpoint}
+            data-method="POST"
+            data-include-credentials
+          >
+            Activate kill switch
+          </button>
+        </div>
+        <div class="rounded-xl border border-border/60 bg-surface/70 p-6 shadow-elev-1">
+          <p class="text-xs uppercase tracking-[0.2em] text-muted">Circuit breaker</p>
+          <p class="mt-3 text-sm text-muted">Temporary pause for price dislocations.</p>
+          <button
+            class="mt-4 gs-btn-secondary gs-btn-sm"
+            data-endpoint={circuitBreakerEndpoint}
+            data-method="POST"
+            data-include-credentials
+          >
+            Trigger breaker
+          </button>
+        </div>
+        <div class="rounded-xl border border-border/60 bg-surface/70 p-6 shadow-elev-1">
+          <p class="text-xs uppercase tracking-[0.2em] text-muted">Docs</p>
+          <a class="mt-3 inline-flex items-center text-sm font-medium text-brand" href={docsEndpoint} rel="noreferrer">
+            Risk API guide
+          </a>
+        </div>
+      </div>
+
+      <div class="overflow-hidden gs-panel">
+        <table class="min-w-full divide-y divide-border/60 text-sm">
+          <thead class="bg-surface/70 text-xs uppercase tracking-[0.2em] text-muted">
+            <tr>
+              <th class="px-4 py-3 text-left">Desk</th>
+              <th class="px-4 py-3 text-left">Net limit</th>
+              <th class="px-4 py-3 text-left">Intraday limit</th>
+              <th class="px-4 py-3 text-left">Status</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border/60 bg-surface/40 text-sm">
+            {limits.map((limit) => (
+              <tr>
+                <td class="px-4 py-3 font-medium text-text">{limit.desk}</td>
+                <td class="px-4 py-3 text-muted">{limit.net}</td>
+                <td class="px-4 py-3 text-muted">{limit.intraday}</td>
+                <td class="px-4 py-3 text-muted">{limit.status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </AdminLayout>
+</BaseLayout>
