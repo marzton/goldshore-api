@@ -2,26 +2,41 @@ import { ok, bad } from "../lib/util";
 import type { Env } from "../types";
 import { alpaca } from "../lib/providers/alpaca";
 
-type OrderPayload = {
-  symbol: string;
-  qty: number | string;
-  side: string;
-  [key: string]: unknown;
-};
-
-function isOrderPayload(value: unknown): value is OrderPayload {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const record = value as Record<string, unknown>;
-  return typeof record.symbol === "string" && (typeof record.qty === "number" || typeof record.qty === "string") && typeof record.side === "string";
+export async function getOrders(env: Env, url: URL, headers: HeadersInit) {
+  try {
+    const status = url.searchParams.get("status") || "open";
+    const data = await alpaca(env, `/orders?status=${encodeURIComponent(status)}`);
+    return ok({ ok: true, data }, headers);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "ALPACA_ERROR";
+    return bad(message, 502, headers);
+  }
 }
 
-export async function getOrders(env: Env, url: URL) {
-  const status = url.searchParams.get("status") || "open";
-  return ok({ ok: true, data: await alpaca(env, `/orders?status=${encodeURIComponent(status)}`) });
-}
+export async function createOrder(env: Env, req: Request, headers: HeadersInit) {
+  if (!env.ALPACA_KEY || !env.ALPACA_SECRET) {
+    return bad("ALPACA credentials not configured", 503, headers);
+  }
 
-export async function createOrder(env: Env, req: Request) {
   const body = await req.json().catch(() => null);
-  if (!isOrderPayload(body)) return bad("MISSING_FIELDS", 400);
-  return ok({ ok: true, data: await alpaca(env, `/orders`, { method: "POST", body: JSON.stringify(body) }) });
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return bad("INVALID_BODY", 400, headers);
+  }
+
+  const payload = body as Record<string, unknown>;
+  if (
+    typeof payload.symbol !== "string" ||
+    (typeof payload.qty !== "number" && typeof payload.qty !== "string") ||
+    typeof payload.side !== "string"
+  ) {
+    return bad("MISSING_FIELDS", 400, headers);
+  }
+
+  try {
+    const data = await alpaca(env, "/orders", { method: "POST", body: JSON.stringify(payload) });
+    return ok({ ok: true, data }, headers);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "ALPACA_ERROR";
+    return bad(message, 502, headers);
+  }
 }
