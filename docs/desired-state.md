@@ -11,7 +11,7 @@
 | `www` | CNAME | `goldshore-web.pages.dev` | Proxied | Canonical marketing hostname |
 | `web` | CNAME | `goldshore-web.pages.dev` | Proxied | Alternate marketing hostname |
 | `admin` | CNAME | `goldshore-admin.pages.dev` | Proxied | Admin console served via Cloudflare Pages + Access |
-| `api` | CNAME | `goldshore-agent.gslabs.workers.dev` | Proxied | Worker production route |
+| `api` | CNAME | `goldshore-agent.goldshore.workers.dev` | Proxied | Worker production route |
 | `banproof` | CNAME | `goldshore-web.pages.dev` | Proxied | Mirror BanProof.me apex through Pages |
 | `*` | (none) | — | — | Wildcard **not** configured; stray hosts must 404 |
 
@@ -22,7 +22,7 @@ All legacy A/AAAA records (`100.2.111.41`, etc.) and circular CNAMES must be del
 | Name | Type | Target | Proxy | Notes |
 | --- | --- | --- | --- | --- |
 | `@` | CNAME | `goldshore.org` | Proxied | Apex mirrors marketing site |
-| `api` | CNAME | `goldshore-agent.gslabs.workers.dev` | Proxied | Public mirror of GoldShore Agent (GET-only enforced) |
+| `api` | CNAME | `goldshore-agent.goldshore.workers.dev` | Proxied | Public mirror of GoldShore Agent (GET-only enforced) |
 
 ## Cloudflare Pages (project: `goldshore-web`)
 
@@ -36,7 +36,7 @@ All legacy A/AAAA records (`100.2.111.41`, etc.) and circular CNAMES must be del
 ## Cloudflare Workers (service: `goldshore-agent`)
 
 - Routes: `api.goldshore.org/*` (zone `goldshore.org`, proxy ON), `api.banproof.me/*` (zone `banproof.me`, proxy ON)
-- workers.dev: enabled for smoke testing (`https://goldshore-agent.gslabs.workers.dev`)
+- workers.dev: enabled for smoke testing (`https://goldshore-agent.goldshore.workers.dev`)
 - Entry module: `src/index.ts`
 - CORS: allows Gold Shore web origins, `Cf-Access-Jwt-Assertion` header permitted
 - Public metadata: `GET /health`, `GET /status`
@@ -65,7 +65,7 @@ All legacy A/AAAA records (`100.2.111.41`, etc.) and circular CNAMES must be del
    - Identity failure redirect: `https://goldshore-web.pages.dev/access-denied`
 
 2. **Gold Shore Admin (Prod/Staging)**
-   - Domains: `https://goldshore-admin.goldshore.workers.dev/*`, `https://admin.goldshore.org/*`, `https://api.goldshore.org/*`, `https://api.banproof.me/*`, `https://goldshore-agent.gslabs.workers.dev/*`
+   - Domains: `https://goldshore-admin.goldshore.workers.dev/*`, `https://admin.goldshore.org/*`, `https://api.goldshore.org/*`, `https://api.banproof.me/*`, `https://goldshore-agent.goldshore.workers.dev/*`
    - Policies (order matters):
      1. Allow: Device posture — Cloudflare WARP (Gold Shore managed fleet)
      2. Allow: email glob `*@goldshore.org`
