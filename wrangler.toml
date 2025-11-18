@@ -2,6 +2,7 @@ name = "goldshore-api"
 main = "src/index.ts"
 compatibility_date = "2025-01-15"
 
+[dev]
 workers_dev = true
 
 [env.dev]
@@ -24,6 +25,15 @@ d1_databases = [
 r2_buckets = [
   { binding = "R2", bucket_name = "goldshore-reports", preview_bucket_name = "goldshore-reports-preview" }
 ]
+
+queues = {
+  producers = [
+    { queue = "jobs", binding = "JOBS" }
+  ],
+  consumers = [
+    { queue = "jobs" }
+  ]
+}
 
 [env.dev.vars]
 CORS_ORIGINS = "https://goldshore.org,https://www.goldshore.org,https://web.goldshore.org,https://*.goldshore.org,https://*.goldshore-web.pages.dev"
