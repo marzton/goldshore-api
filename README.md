@@ -87,7 +87,7 @@ artifacts live in `apps/admin/dist/` and should be published through Pages once 
 3. Navigate to any protected domain without being logged in → redirected to Cloudflare Access → failing sign-in ends on
    the branded access denied page.
 4. DNS for `goldshore.org`, `www.goldshore.org`, and `web.goldshore.org` resolves to Cloudflare (flattened CNAME →
-   `goldshore-web.pages.dev`); `api.goldshore.org` resolves to `goldshore-api.gslabs.workers.dev`.
+   `goldshore-web.pages.dev`); `api.goldshore.org` resolves to `goldshore-agent.goldshore.workers.dev`.
 5. Cloudflare Access dashboard shows OIDC + GitHub login methods enabled with two applications (Web + Admin). The
    `goldshore-admin` app should list domains `goldshore-admin.goldshore.workers.dev/*` and `api.goldshore.org/*`, apply the
    email glob `*@goldshore.org`, allow Gold Shore's GitHub organization, then fall back to deny-all.

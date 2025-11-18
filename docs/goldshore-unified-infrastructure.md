@@ -40,7 +40,7 @@ The following directive describes how the public web frontend and the API worker
 >    - Repository: goldshore/goldshore-api
 >    - Deployment via `npx wrangler deploy`
 >    - Route mapping (Cloudflare → Workers): `api.goldshore.org/*`
->    - Worker subdomain (auto): `https://goldshore-api.gslabs.workers.dev`
+>    - Worker subdomain (auto): `https://goldshore-agent.goldshore.workers.dev`
 >    - Wrangler must bind the Worker to the `goldshore.org` zone with:
 >
 >      ```json
@@ -90,7 +90,7 @@ The following directive describes how the public web frontend and the API worker
 > ```bash
 > curl -I https://goldshore.org        # should return HTML headers
 > curl -I https://api.goldshore.org    # should return JSON or 200 from Worker
-> curl -I https://goldshore-api.gslabs.workers.dev  # backup worker endpoint
+> curl -I https://goldshore-agent.goldshore.workers.dev  # backup worker endpoint
 > ```
 >
 > Expected results:

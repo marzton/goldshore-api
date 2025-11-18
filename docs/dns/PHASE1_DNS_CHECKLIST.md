@@ -28,7 +28,7 @@ nslookup api.goldshore.org
 
 ## 4. Domain attachments
 - [ ] Cloudflare Worker service `GoldShore` has the route `api.goldshore.org/*`.
-- [ ] Cloudflare Worker service `GoldShore` exposes `goldshore-api.gslabs.workers.dev` for development/testing.
+- [ ] Cloudflare Worker service `GoldShore` exposes `goldshore-agent.goldshore.workers.dev` for development/testing.
 
 ## 5. SSL/TLS
 - [ ] Cloudflare SSL/TLS mode is **Full (strict)**.
