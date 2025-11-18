@@ -35,7 +35,7 @@ queues = {
   ]
 }
 
-[vars]
+[env.dev.vars]
 CORS_ORIGINS = "https://goldshore.org,https://www.goldshore.org,https://web.goldshore.org,https://*.goldshore.org,https://*.goldshore-web.pages.dev"
 ACCESS_ISSUER = "https://goldshore.cloudflareaccess.com"
 ACCESS_JWKS_URL = "https://goldshore.cloudflareaccess.com/cdn-cgi/access/certs"
@@ -44,3 +44,10 @@ AGENT_SYSTEM_PROMPT = ""
 SERVICE_NAME = "GoldShore Agent"
 AI_MODEL = "gpt-4o-mini"
 PUBLIC_ADMIN = "https://admin.goldshore.org"
+
+[[env.dev.queues.producers]]
+binding = "JOBS"
+queue = "jobs"
+
+[[env.dev.queues.consumers]]
+queue = "jobs"
