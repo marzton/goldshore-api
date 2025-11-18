@@ -2,6 +2,7 @@ name = "goldshore-api"
 main = "src/index.ts"
 compatibility_date = "2025-01-15"
 
+[env.dev]
 routes = [
   { pattern = "api.goldshore.org/*", zone_name = "goldshore.org" },
   { pattern = "api.banproof.me/*", zone_name = "banproof.me" }
@@ -22,7 +23,16 @@ r2_buckets = [
   { binding = "R2", bucket_name = "goldshore-reports", preview_bucket_name = "goldshore-reports-preview" }
 ]
 
-[vars]
+queues = {
+  producers = [
+    { queue = "jobs", binding = "JOBS" }
+  ],
+  consumers = [
+    { queue = "jobs" }
+  ]
+}
+
+[env.dev.vars]
 CORS_ORIGINS = "https://goldshore.org,https://www.goldshore.org,https://web.goldshore.org,https://*.goldshore.org,https://*.goldshore-web.pages.dev"
 ACCESS_ISSUER = "https://goldshore.cloudflareaccess.com"
 ACCESS_JWKS_URL = "https://goldshore.cloudflareaccess.com/cdn-cgi/access/certs"
