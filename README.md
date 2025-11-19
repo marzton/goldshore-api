@@ -33,6 +33,29 @@ Wrangler automatically reads these values from `wrangler.toml` in development. T
 can copy the `Cf-Access-Jwt-Assertion` header from a production request and attach it with `--header` when issuing curl
 commands against `http://127.0.0.1:8787`.
 
+## Configuration
+
+The following table details the environment variables and secrets required for the application to run correctly.
+
+| Variable | Description | How to Obtain |
+| --- | --- | --- |
+| `CF_ACCOUNT_ID` | Your Cloudflare account ID. | Found in the Cloudflare dashboard under **Workers & Pages** > **Overview**. |
+| `CF_API_TOKEN` | Your Cloudflare API token. | Create a new token in the Cloudflare dashboard under **My Profile** > **API Tokens**. The token requires the following permissions: `Account.Workers`, `Account.Pages`, `Zone.DNS`, and `Account.Access:Edit`. |
+| `CORS_ORIGINS` | A comma-separated list of allowed origins for CORS. | This should be set to the domains of your web applications that need to communicate with the API (e.g., `https://goldshore.org,https://www.goldshore.org`). |
+| `ACCESS_ISSUER` | The issuer of the JWTs. | This is your Cloudflare Access domain (e.g., `https://<your-team-name>.cloudflareaccess.com`). |
+| `ACCESS_JWKS_URL` | The URL for the JSON Web Key Set. | This is your Cloudflare Access domain followed by `/cdn-cgi/access/certs` (e.g., `https://<your-team-name>.cloudflareaccess.com/cdn-cgi/access/certs`). |
+| `ACCESS_AUDIENCE` | The audience for the JWTs. | This is the application audience from your Cloudflare Access application. You can find this in the Cloudflare Zero Trust dashboard under **Access** > **Applications**. |
+
+### Optional Overrides
+
+The following variables can be set to override the default CORS behavior.
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `CORS_ALLOW_HEADERS` | A comma-separated list of allowed headers. | `Authorization,Content-Type,Cf-Access-Jwt-Assertion,Cf-Access-Authenticated-User-Email` |
+| `CORS_MAX_AGE` | The maximum age for the CORS preflight request. | `86400` |
+| `CORS_ALLOW_CREDENTIALS` | Whether to allow credentials for CORS requests. | `true` |
+
 ## Deployment workflow
 
 1. Ensure GitHub secrets `CF_ACCOUNT_ID` and `CF_API_TOKEN` are present (token scope: `Workers KV Storage:Edit`,
