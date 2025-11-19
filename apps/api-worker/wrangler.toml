@@ -1,21 +1,44 @@
-name = "GoldShore"
+name = "goldshore-api"
 main = "src/index.ts"
-compatibility_date = "2025-10-10"
+compatibility_date = "2025-01-15"
+
+routes = [
+  { pattern = "api.goldshore.org/*", zone_name = "goldshore.org" }
+]
+
+kv_namespaces = [
+  { binding = "KV_SESSIONS", id = "00000000000000000000000000000000" },
+  { binding = "KV_CACHE", id = "00000000000000000000000000000001" }
+]
+
+r2_buckets = [
+  { binding = "R2_PUBLIC", bucket_name = "goldshore-public" },
+  { binding = "R2_LOGS", bucket_name = "goldshore-logs" }
+]
+
+d1_databases = [
+  { binding = "D1_DATABASE", database_name = "goldshore-core", database_id = "00000000-0000-0000-0000-000000000000" }
+]
+
+queues = {
+  producers = [
+    { queue = "events", binding = "QUEUE_EVENTS" },
+    { queue = "dlq", binding = "QUEUE_DLQ" }
+  ],
+  consumers = [
+    { queue = "events", dead_letter_queue = "dlq" }
+  ]
+}
+
+[triggers]
+crons = ["*/30 * * * *"]
 
 [vars]
-ENV = "production"
-# Cloudflare Access validation settings (copy from Zero Trust → Access → Application → Overview).
+CORS_ORIGINS = "https://goldshore.org,https://www.goldshore.org,https://web.goldshore.org,https://*.goldshore.org,https://*.goldshore-web.pages.dev"
 ACCESS_ISSUER = "https://goldshore.cloudflareaccess.com"
 ACCESS_JWKS_URL = "https://goldshore.cloudflareaccess.com/cdn-cgi/access/certs"
 ACCESS_AUDIENCE = "15b3d02e775a7c84ac87a41d671bff94da19cb968c3a07c72b087d0e2ccafaf5"
-# Set via `wrangler secret put TRADE_API_TOKEN` to enable authenticated trading.
-
-# Add a route after DNS is set:
-# routes = [
-#   { pattern = "api.goldshore.org/*", zone_name = "goldshore.org" }
-# ]
-
-# Example bindings later:
-# [[kv_namespaces]]
-# binding = "KV_GOLDSHORE"
-# id = "xxxxxxxxxxxxxxxxxxxxx"
+AGENT_SYSTEM_PROMPT = ""
+SERVICE_NAME = "GoldShore Agent"
+AI_MODEL = "gpt-4o-mini"
+PUBLIC_ADMIN = "https://admin.goldshore.org"
