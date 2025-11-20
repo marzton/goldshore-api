@@ -1,73 +1,87 @@
 import { Hono } from "hono";
-import type { MiddlewareHandler } from "hono";
-import { corsHeaders } from "./lib/cors";
-import { requireAccess, type AccessResult } from "./lib/access";
-import { bad, ok, unauthorized } from "./lib/util";
+import { cors } from "hono/cors";
+import { validateJWT } from "./middleware/auth";
+import { ok } from "./lib/util";
 import type { Env } from "./types";
 
-const app = new Hono<{ Bindings: Env; Variables: { cors: Headers; access?: AccessResult } }>();
+// Import v1 API routes
+import api_v1 from "./app";
 
-app.use("*", async (c, next) => {
-  const cors = corsHeaders(c.env, c.req.raw);
-  c.set("cors", cors);
+const app = new Hono<{ Bindings: Env }>();
 
-  if (c.req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: cors });
-  }
-
-  await next();
-});
-
-app.get("/health", c => {
-  const headers = c.get("cors");
-  return ok(
-    {
-      ok: true,
-      service: "api-worker",
-      time: new Date().toISOString()
+// 1. CORS Middleware (as specified in the manual)
+// Note: This replaces the previous manual CORS header implementation.
+// The `CORS_ALLOWED` variable must be a JSON string array in wrangler.toml.
+app.use(
+  "/*",
+  cors({
+    origin: (origin, c) => {
+      try {
+        const allowedOrigins = JSON.parse(c.env.CORS_ALLOWED);
+        if (allowedOrigins.includes(origin)) {
+          return origin;
+        }
+        // Return first origin as a default? Or handle differently.
+        return allowedOrigins[0] || origin;
+      } catch (e) {
+        // Fallback if parsing fails or CORS_ALLOWED is not set
+        return c.env.PUBLIC_HOME || origin;
+      }
     },
-    headers
-  );
-});
+    credentials: true,
+    allowHeaders: ["Authorization", "Content-Type"],
+    exposeHeaders: ["CF-Ray"]
+  })
+);
 
-const ensureAccess: MiddlewareHandler<{ Bindings: Env; Variables: { cors: Headers; access?: AccessResult } }> = async (
-  c,
-  next
-) => {
-  const result = await requireAccess(c.req.raw, c.env);
-  if (!result.authorized) {
-    const headers = new Headers(c.get("cors"));
-    headers.set("WWW-Authenticate", 'Bearer realm="Cloudflare Access"');
-    return unauthorized(headers);
+// 2. JWT Validation Middleware (as specified in the manual)
+// Note: This replaces the previous `requireAccess` middleware.
+app.use("*", async (c, next) => {
+  // Bypass authentication for the health check endpoint
+  if (c.req.path === "/health") {
+    await next();
+    return;
   }
 
-  c.set("access", result);
+  const auth = await validateJWT(c.req.raw, c.env);
+  if (!auth.ok) {
+    return c.json({ error: auth.error }, 401);
+  }
   await next();
-};
+});
 
-app.use("/trade", ensureAccess);
+// 3. Health Check Endpoint
+app.get("/health", c => {
+  return ok({
+    ok: true,
+    service: "api-worker",
+    time: new Date().toISOString()
+  });
+});
 
+// 4. OpenAPI Routes
+// Mount the existing v1 API routes.
+app.route("/v1", api_v1);
+
+// 5. Existing /trade endpoint (re-integrated)
+// This was in the original file and seems important. We'll keep it.
+// It uses a separate Bearer token authentication, which is a common pattern for specific webhooks or service-to-service calls.
 app.post("/trade", async c => {
-  const headers = c.get("cors");
   const sharedSecret = c.env.TRADE_API_TOKEN;
   const authHeader = c.req.header("authorization");
 
   if (!sharedSecret) {
-    return bad("Trading is not configured on this deployment.", 503, headers);
+    return c.json({ error: "Trading is not configured on this deployment." }, 503);
   }
 
   if (!authHeader || authHeader !== `Bearer ${sharedSecret}`) {
-    const responseHeaders = new Headers(headers);
-    responseHeaders.set("WWW-Authenticate", 'Bearer realm="Goldshore API"');
-    return unauthorized(responseHeaders);
+    const headers = new Headers();
+    headers.set("WWW-Authenticate", 'Bearer realm="Goldshore API"');
+    return c.json({ error: "Unauthorized" }, 401, headers);
   }
 
-  return ok({ status: "ok" }, headers);
+  return ok({ status: "ok" });
 });
-
-// --- OpenAPI Routes ---
-import api_v1 from "./app";
-app.route("/v1", api_v1);
 
 
 export default app;
