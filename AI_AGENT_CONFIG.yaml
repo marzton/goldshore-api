@@ -1,0 +1,7 @@
+repo_lock_mode: true
+fail_safe_mode: true
+require_confirmation_for_dns: true
+require_confirmation_for_cross_repo: true
+enforce_global_rules: true
+enforce_scope_rules: true
+log_all_actions: true
