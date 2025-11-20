@@ -1,34 +1,32 @@
 repository: goldshore-admin
 description: >
-  Gold Shore Admin UI (Astro).
-  Protected by Cloudflare Access.
-  Hosted at https://docs.goldshore.org or https://admin.goldshore.org if reassigned.
+  Admin cockpit dashboard. Private authenticated UI. Uses cockpit components,
+  applet modules, neon/titanium/alcantara themes, and business workflows.
 
 domain: https://admin.goldshore.org
 cloudflare_project: goldshore-admin
 
 scope:
   allowed:
-    - src/**
+    - src/dashboard/**
+    - src/components/**
+    - src/routes/**
     - public/**
-    - components/**
-    - routes/**
-    - cockpit/**
+    - cockpit theme files
     - AI/INSTRUCTIONS/**
+    - tokens from packages/theme
   forbidden:
     - ../goldshore-web/**
     - ../goldshore-api/**
     - ../goldshore-gateway/**
-    - wrangler.toml
-    - worker/**
-    - DNS or Cloudflare Routes
+    - terraform/**
+    - dns configs
 
 dangerous_operations:
   disallowed:
-    - modifying API schema
-    - altering gateway Worker behavior
-    - editing public site content
-    - deleting bindings
+    - modifying public website content
+    - altering API contract
+    - touching gateway router configuration
 
 agent_behavior:
   respond_only_within_scope: true
