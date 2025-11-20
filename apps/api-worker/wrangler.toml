@@ -1,21 +1,75 @@
-name = "GoldShore"
+# Top-level configuration
+name = "goldshore-api"
 main = "src/index.ts"
-compatibility_date = "2025-10-10"
+compatibility_date = "2025-01-15"
 
-[vars]
-ENV = "production"
-# Cloudflare Access validation settings (copy from Zero Trust → Access → Application → Overview).
-ACCESS_ISSUER = "https://goldshore.cloudflareaccess.com"
-ACCESS_JWKS_URL = "https://goldshore.cloudflareaccess.com/cdn-cgi/access/certs"
-ACCESS_AUDIENCE = "15b3d02e775a7c84ac87a41d671bff94da19cb968c3a07c72b087d0e2ccafaf5"
-# Set via `wrangler secret put TRADE_API_TOKEN` to enable authenticated trading.
+# ------------------------------------------------------------------
+# PRODUCTION ENVIRONMENT
+# Deployed from the 'main' branch and active on api.goldshore.org
+# ------------------------------------------------------------------
+[env.production]
+routes = [
+  { pattern = "api.goldshore.org/*", zone_name = "goldshore.org" }
+]
 
-# Add a route after DNS is set:
-# routes = [
-#   { pattern = "api.goldshore.org/*", zone_name = "goldshore.org" }
-# ]
+[env.production.vars]
+API_ENVIRONMENT = "production"
+GOLD_SHORE_VERSION = "1.0.0"
 
-# Example bindings later:
-# [[kv_namespaces]]
-# binding = "KV_GOLDSHORE"
-# id = "xxxxxxxxxxxxxxxxxxxxx"
+# Production Bindings (replace IDs with actual values)
+[[env.production.kv_namespaces]]
+binding = "STORE"
+id = "<PROD_KV_ID>"
+preview_id = "<PREVIEW_KV_ID>"
+
+[[env.production.r2_buckets]]
+binding = "ASSETS"
+bucket_name = "goldshore-assets-prod"
+preview_bucket_name = "goldshore-assets-preview"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "goldshore-db-prod"
+database_id = "<PROD_DB_ID>"
+preview_database_id = "<PREVIEW_DB_ID>"
+
+[[env.production.services]]
+binding = "gateway"
+service = "goldshore-gateway"
+environment = "production"
+
+# ------------------------------------------------------------------
+# PREVIEW ENVIRONMENT
+# Deployed from feature branches and active on api-preview.goldshore.org
+# ------------------------------------------------------------------
+[env.preview]
+routes = [
+  { pattern = "api-preview.goldshore.org/*", zone_name = "goldshore.org" }
+]
+
+[env.preview.vars]
+API_ENVIRONMENT = "preview"
+GOLD_SHORE_VERSION = "preview"
+
+# Preview Bindings (these will use the 'preview' versions defined above)
+[[env.preview.kv_namespaces]]
+binding = "STORE"
+id = "<PREVIEW_KV_ID>"
+
+[[env.preview.r2_buckets]]
+binding = "ASSETS"
+bucket_name = "goldshore-assets-preview"
+
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "goldshore-db-preview"
+database_id = "<PREVIEW_DB_ID>"
+
+[[env.preview.services]]
+binding = "gateway"
+service = "goldshore-gateway"
+environment = "preview"
+
+# AI Gateway binding (available in both environments)
+[[ai]]
+binding = "AI"

@@ -1,0 +1,23 @@
+name = "goldshore-web"
+compatibility_date = "2025-01-15"
+
+# ------------------------------------------------------------------
+# PRODUCTION ENVIRONMENT (`main` branch)
+# ------------------------------------------------------------------
+pages_build_output_dir = "dist"
+
+[vars]
+VITE_PUBLIC_API = "https://api.goldshore.org"
+VITE_PUBLIC_GATEWAY = "https://gateway.goldshore.org"
+VITE_APP_ENV = "production"
+
+# ------------------------------------------------------------------
+# PREVIEW ENVIRONMENTS (all other branches)
+# ------------------------------------------------------------------
+[preview]
+pages_build_output_dir = "dist"
+
+[preview.vars]
+VITE_PUBLIC_API = "https://api-preview.goldshore.org"
+VITE_PUBLIC_GATEWAY = "https://gateway-preview.goldshore.org"
+VITE_APP_ENV = "preview"
