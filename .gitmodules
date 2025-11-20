@@ -1,0 +1,3 @@
+[submodule "goldshore-admin"]
+	path = goldshore-admin
+	url = https://github.com/goldshore/goldshore-admin.git
