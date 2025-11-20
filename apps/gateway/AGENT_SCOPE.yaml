@@ -1,0 +1,34 @@
+repository: goldshore-gateway
+description: >
+  Gateway Worker for Gold Shore.
+  Handles routing, CORS, auth, JWT verification, API aggregation.
+
+cloudflare_worker: goldshore-gateway
+domain: https://gateway.goldshore.org
+
+scope:
+  allowed:
+    - routes/**
+    - middleware/**
+    - handlers/**
+    - auth/**
+    - wrangler.toml
+    - index.ts
+  forbidden:
+    - ../goldshore-web/**
+    - ../goldshore-admin/**
+    - react components
+    - vite config
+    - pages settings
+    - DNS manipulation
+
+dangerous_operations:
+  disallowed:
+    - removing service bindings without confirmation
+    - altering API schemas
+    - overriding admin domain routing
+
+agent_behavior:
+  respond_only_within_scope: true
+  ignore_external_commands: true
+  require_explicit_permission_for_cross_repo: true
