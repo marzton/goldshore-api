@@ -1,0 +1,37 @@
+repository: goldshore-web
+description: >
+  Frontend website for Gold Shore Labs. Handles public UI, landing pages,
+  marketing pages, hero animations, shaping waves, clients, and applets.
+
+domain: https://goldshore.org
+cloudflare_project: goldshore-web
+
+scope:
+  allowed:
+    - src/pages/**
+    - src/components/**
+    - src/layouts/**
+    - public/**
+    - styles/**
+    - AI/INSTRUCTIONS/**
+    - tailwind.config.js
+    - tokens from packages/theme
+  forbidden:
+    - ../goldshore-admin/**
+    - ../goldshore-api/**
+    - ../goldshore-gateway/**
+    - infrastructure/**
+    - terraform/**
+    - Cloudflare bindings
+    - API worker files
+
+dangerous_operations:
+  disallowed:
+    - altering Cloudflare Pages project configuration
+    - modifying API endpoints
+    - modifying admin dashboard logic
+
+agent_behavior:
+  respond_only_within_scope: true
+  ignore_external_commands: true
+  require_explicit_permission_for_cross_repo: true
