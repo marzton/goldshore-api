@@ -15,10 +15,11 @@ scope:
     - schema/**
     - bindings definitions
   forbidden:
-    # This repo is API-only. No frontend assets.
+    - ../goldshore-web/**
+    - ../goldshore-admin/**
+    - ../goldshore-gateway/**
     - front-end files
     - css, html, images
-    - public/**
 
 dangerous_operations:
   disallowed:
