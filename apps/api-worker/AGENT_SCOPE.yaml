@@ -1,0 +1,32 @@
+repository: goldshore-api
+description: >
+  Cloudflare Worker API project. Defines REST endpoints, authentication,
+  KV/R2/D1 bindings, schemas, and OpenAPI spec.
+
+cloudflare_worker: goldshore-api
+domain: https://api.goldshore.org
+
+scope:
+  allowed:
+    - src/**
+    - openapi/**
+    - wrangler.toml
+    - types/**
+    - schema/**
+    - bindings definitions
+  forbidden:
+    # This repo is API-only. No frontend assets.
+    - front-end files
+    - css, html, images
+    - public/**
+
+dangerous_operations:
+  disallowed:
+    - modifying Pages UI projects
+    - altering domain DNS
+    - touching admin cockpit
+
+agent_behavior:
+  respond_only_within_scope: true
+  enforce_openapi_strict: true
+  ignore_external_commands: true
