@@ -15,7 +15,7 @@ routes = [
 # Routing
 PUBLIC_HOME = "https://goldshore.org"
 ADMIN_APP = "https://admin.goldshore.org"
-API_BASE = "https://api.goldshore.org"
+API_PUBLIC_URL = "https://api.goldshore.org"
 
 # Security / integrations
 CORS_ALLOWED = "[\"https://goldshore.org\",\"https://admin.goldshore.org\",\"https://preview.goldshore.org\",\"http://localhost:5173\"]"
