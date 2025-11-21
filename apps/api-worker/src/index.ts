@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { validateJWT } from "./middleware/auth";
 import { ok } from "./lib/util";
 import type { Env } from "./types";
+import { CanonicalEnvSchema } from "@goldshore/env";
 
 // Import v1 API routes
 import api_v1 from "./app";
@@ -84,4 +85,14 @@ app.post("/trade", async c => {
 });
 
 
-export default app;
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    try {
+      CanonicalEnvSchema.parse(env);
+    } catch (e) {
+      console.error("Failed to parse environment variables:", e);
+      return new Response("Internal Server Error: Invalid environment configuration.", { status: 500 });
+    }
+    return app.fetch(request, env, ctx);
+  },
+};
