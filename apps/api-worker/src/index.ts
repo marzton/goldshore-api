@@ -6,7 +6,8 @@ import { bad, ok, unauthorized } from "./lib/util";
 import type { Env } from "./types";
 import { CanonicalEnvSchema } from "@goldshore/env";
 
-const app = new Hono<{ Bindings: Env; Variables: { cors: Headers; access?: AccessResult } }>();
+// Import v1 API routes
+import api_v1 from "./app";
 
 app.use("*", cors({
   origin: "*",
@@ -18,6 +19,7 @@ app.options("*", (c) => {
   return c.text("ok");
 });
 
+// 3. Health Check Endpoint
 app.get("/health", c => {
   return ok(
     {
@@ -45,6 +47,9 @@ const ensureAccess: MiddlewareHandler<{ Bindings: Env; Variables: { cors: Header
 
 app.use("/trade", ensureAccess);
 
+// 5. Existing /trade endpoint (re-integrated)
+// This was in the original file and seems important. We'll keep it.
+// It uses a separate Bearer token authentication, which is a common pattern for specific webhooks or service-to-service calls.
 app.post("/trade", async c => {
   const sharedSecret = c.env.TRADE_API_TOKEN;
   const authHeader = c.req.header("authorization");
@@ -62,9 +67,6 @@ app.post("/trade", async c => {
   return ok({ status: "ok" });
 });
 
-// --- OpenAPI Routes ---
-import api_v1 from "./app";
-app.route("/v1", api_v1);
 
 
 export default {

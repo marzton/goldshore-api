@@ -1,7 +1,7 @@
 repository: goldshore-gateway
 description: >
-  Unified Worker Gateway. Handles routing, authentication, CORS, JWT,
-  SCIM, OAuth, admin protection, analytics ingestion.
+  Gateway Worker for Gold Shore.
+  Handles routing, CORS, auth, JWT verification, API aggregation.
 
 cloudflare_worker: goldshore-gateway
 domain: https://gateway.goldshore.org
@@ -10,20 +10,23 @@ scope:
   allowed:
     - routes/**
     - middleware/**
-    - router.ts
+    - handlers/**
     - auth/**
     - wrangler.toml
+    - index.ts
   forbidden:
     - ../goldshore-web/**
     - ../goldshore-admin/**
-    - css or UI additions
-    - front-end modifications
+    - react components
+    - vite config
+    - pages settings
+    - DNS manipulation
 
 dangerous_operations:
   disallowed:
-    - altering API endpoint schemas
-    - modifying the UI system
-    - deleting worker bindings without user confirmation
+    - removing service bindings without confirmation
+    - altering API schemas
+    - overriding admin domain routing
 
 agent_behavior:
   respond_only_within_scope: true
