@@ -1,68 +1,51 @@
 import { Hono } from "hono";
-import { cors } from "hono/cors";
-import { validateJWT } from "./middleware/auth";
-import { ok } from "./lib/util";
+import type { MiddlewareHandler } from "hono";
+import { cors } from 'hono/cors'
+import { requireAccess, type AccessResult } from "./lib/access";
+import { bad, ok, unauthorized } from "./lib/util";
 import type { Env } from "./types";
 import { CanonicalEnvSchema } from "@goldshore/env";
 
 // Import v1 API routes
 import api_v1 from "./app";
 
-const app = new Hono<{ Bindings: Env }>();
+app.use("*", cors({
+  origin: "*",
+  allowHeaders: ["Authorization", "Content-Type"],
+  allowMethods: ["GET", "POST", "OPTIONS"],
+}));
 
-// 1. CORS Middleware (as specified in the manual)
-// Note: This replaces the previous manual CORS header implementation.
-// The `CORS_ALLOWED` variable must be a JSON string array in wrangler.toml.
-app.use(
-  "/*",
-  cors({
-    origin: (origin, c) => {
-      try {
-        const allowedOrigins = JSON.parse(c.env.CORS_ALLOWED);
-        if (allowedOrigins.includes(origin)) {
-          return origin;
-        }
-        // Return first origin as a default? Or handle differently.
-        return allowedOrigins[0] || origin;
-      } catch (e) {
-        // Fallback if parsing fails or CORS_ALLOWED is not set
-        return c.env.PUBLIC_HOME || origin;
-      }
-    },
-    credentials: true,
-    allowHeaders: ["Authorization", "Content-Type"],
-    exposeHeaders: ["CF-Ray"]
-  })
-);
-
-// 2. JWT Validation Middleware (as specified in the manual)
-// Note: This replaces the previous `requireAccess` middleware.
-app.use("*", async (c, next) => {
-  // Bypass authentication for the health check endpoint
-  if (c.req.path === "/health") {
-    await next();
-    return;
-  }
-
-  const auth = await validateJWT(c.req.raw, c.env);
-  if (!auth.ok) {
-    return c.json({ error: auth.error }, 401);
-  }
-  await next();
+app.options("*", (c) => {
+  return c.text("ok");
 });
 
 // 3. Health Check Endpoint
 app.get("/health", c => {
-  return ok({
-    ok: true,
-    service: "api-worker",
-    time: new Date().toISOString()
-  });
+  return ok(
+    {
+      ok: true,
+      service: "api-worker",
+      time: new Date().toISOString()
+    }
+  );
 });
 
-// 4. OpenAPI Routes
-// Mount the existing v1 API routes.
-app.route("/v1", api_v1);
+const ensureAccess: MiddlewareHandler<{ Bindings: Env; Variables: { cors: Headers; access?: AccessResult } }> = async (
+  c,
+  next
+) => {
+  const result = await requireAccess(c.req.raw, c.env);
+  if (!result.authorized) {
+    const headers = new Headers();
+    headers.set("WWW-Authenticate", 'Bearer realm="Cloudflare Access"');
+    return unauthorized(headers);
+  }
+
+  c.set("access", result);
+  await next();
+};
+
+app.use("/trade", ensureAccess);
 
 // 5. Existing /trade endpoint (re-integrated)
 // This was in the original file and seems important. We'll keep it.
@@ -72,17 +55,18 @@ app.post("/trade", async c => {
   const authHeader = c.req.header("authorization");
 
   if (!sharedSecret) {
-    return c.json({ error: "Trading is not configured on this deployment." }, 503);
+    return bad("Trading is not configured on this deployment.", 503);
   }
 
   if (!authHeader || authHeader !== `Bearer ${sharedSecret}`) {
-    const headers = new Headers();
-    headers.set("WWW-Authenticate", 'Bearer realm="Goldshore API"');
-    return c.json({ error: "Unauthorized" }, 401, headers);
+    const responseHeaders = new Headers();
+    responseHeaders.set("WWW-Authenticate", 'Bearer realm="Goldshore API"');
+    return unauthorized(responseHeaders);
   }
 
   return ok({ status: "ok" });
 });
+
 
 
 export default {

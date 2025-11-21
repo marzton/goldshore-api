@@ -16,12 +16,10 @@ scope:
     - bindings/**
     - types/**
   forbidden:
-    - ../goldshore-web/**
-    - ../goldshore-admin/**
-    - ../goldshore-gateway/**
-    - UI files (html, css, react components)
-    - Cloudflare Pages config
-    - DNS changes
+    # This repo is API-only. No frontend assets.
+    - front-end files
+    - css, html, images
+    - public/**
 
 dangerous_operations:
   disallowed:
