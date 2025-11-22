@@ -7,7 +7,9 @@ import type { Env } from "./types";
 import { CanonicalEnvSchema } from "@goldshore/env";
 
 // Import v1 API routes
-import api_v1 from "./app";
+import { createApp } from "./app";
+
+const app = new Hono<{ Bindings: Env }>();
 
 app.use("*", cors({
   origin: "*",
@@ -77,6 +79,10 @@ export default {
       console.error("Failed to parse environment variables:", e);
       return new Response("Internal Server Error: Invalid environment configuration.", { status: 500 });
     }
+
+    const v1_app = createApp(env);
+    app.route("/v1", v1_app);
+
     return app.fetch(request, env, ctx);
   },
 };

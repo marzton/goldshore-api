@@ -1,0 +1,18 @@
+# wrangler.toml (Root Configuration for Cloudflare Pages)
+
+# This file provides a minimal configuration to ensure the orphaned
+# Cloudflare Pages project named "goldshore-api" can build successfully.
+# It does NOT define a Worker and will not conflict with the canonical
+# API Worker defined in `apps/api-worker/wrangler.toml`.
+
+name = "goldshore-dashboard"
+compatibility_date = "2025-01-20"
+
+# The `pages_build_output_dir` tells Cloudflare Pages where to find the static assets.
+pages_build_output_dir = "dist"
+
+# The `[build.environment]` section is critical. It sets an environment
+# variable during the Pages build process that instructs Git to ignore submodules,
+# which is the cause of the build failure.
+[build.environment]
+GIT_SUBMODULE_STRATEGY = "none"
