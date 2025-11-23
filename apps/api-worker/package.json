@@ -12,9 +12,7 @@
     "typescript": "^5.5.4"
   },
   "dependencies": {
-    "@goldshore/env": "workspace:*",
     "@hono/zod-openapi": "^1.1.5",
-    "hono": "^4.10.6",
-    "jose": "^6.1.2"
+    "hono": "^4.10.6"
   }
 }

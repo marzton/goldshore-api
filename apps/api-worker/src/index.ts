@@ -69,6 +69,9 @@ app.post("/trade", async c => {
   return ok({ status: "ok" });
 });
 
+// --- OpenAPI Routes ---
+import api_v1 from "./app";
+app.route("/v1", api_v1);
 
 
 export default {

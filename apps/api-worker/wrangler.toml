@@ -1,58 +1,75 @@
+# Top-level configuration
 name = "goldshore-api"
 main = "src/index.ts"
-compatibility_date = "2025-01-20"
+compatibility_date = "2025-01-15"
 
-account_id = "f77de112d2019e5456a3198a8bb50bd2"
-
+# ------------------------------------------------------------------
+# PRODUCTION ENVIRONMENT
+# Deployed from the 'main' branch and active on api.goldshore.org
+# ------------------------------------------------------------------
+[env.production]
 routes = [
-  { pattern = "api.goldshore.org/*", zone_id = "d86cd71f0d1c8b8e08928a32e0c95ae3" }
+  { pattern = "api.goldshore.org/*", zone_name = "goldshore.org" }
 ]
 
-[vars]
-# Non-secret environment variables.
-# Secrets are managed via `wrangler secret put` and are not committed to the repository.
+[env.production.vars]
+API_ENVIRONMENT = "production"
+GOLD_SHORE_VERSION = "1.0.0"
+
+# Production Bindings (replace IDs with actual values)
+[[env.production.kv_namespaces]]
+binding = "STORE"
+id = "<PROD_KV_ID>"
+preview_id = "<PREVIEW_KV_ID>"
 
 # Routing
 PUBLIC_HOME = "https://goldshore.org"
 ADMIN_APP = "https://admin.goldshore.org"
 API_PUBLIC_URL = "https://api.goldshore.org"
 
-# Security / integrations
-CORS_ALLOWED = "[\"https://goldshore.org\",\"https://admin.goldshore.org\",\"https://preview.goldshore.org\",\"http://localhost:5173\"]"
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "goldshore-db-prod"
+database_id = "<PROD_DB_ID>"
+preview_database_id = "<PREVIEW_DB_ID>"
 
-[[kv_namespaces]]
-binding = "KV_SESSIONS"
-id = "00000000000000000000000000000000"
+[[env.production.services]]
+binding = "gateway"
+service = "goldshore-gateway"
+environment = "production"
 
-[[kv_namespaces]]
-binding = "KV_CACHE"
-id = "00000000000000000000000000000001"
-
-[[kv_namespaces]]
-binding = "KV_NAMESPACE"
-id = "goldshore.org"
-
-[[r2_buckets]]
-binding = "R2_PUBLIC"
-bucket_name = "goldshore-public"
-
-[[r2_buckets]]
-binding = "R2_LOGS"
-bucket_name = "goldshore-logs"
-
-[[d1_databases]]
-binding = "D1_DATABASE"
-database_name = "goldshore-core"
-database_id = "00000000-0000-0000-0000-000000000000"
-
-[queues]
-producers = [
-  { queue = "events", binding = "QUEUE_EVENTS" },
-  { queue = "dlq", binding = "QUEUE_DLQ" }
-]
-consumers = [
-  { queue = "events", dead_letter_queue = "dlq" }
+# ------------------------------------------------------------------
+# PREVIEW ENVIRONMENT
+# Deployed from feature branches and active on api-preview.goldshore.org
+# ------------------------------------------------------------------
+[env.preview]
+routes = [
+  { pattern = "api-preview.goldshore.org/*", zone_name = "goldshore.org" }
 ]
 
-[triggers]
-crons = ["*/30 * * * *"]
+[env.preview.vars]
+API_ENVIRONMENT = "preview"
+GOLD_SHORE_VERSION = "preview"
+
+# Preview Bindings (these will use the 'preview' versions defined above)
+[[env.preview.kv_namespaces]]
+binding = "STORE"
+id = "<PREVIEW_KV_ID>"
+
+[[env.preview.r2_buckets]]
+binding = "ASSETS"
+bucket_name = "goldshore-assets-preview"
+
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "goldshore-db-preview"
+database_id = "<PREVIEW_DB_ID>"
+
+[[env.preview.services]]
+binding = "gateway"
+service = "goldshore-gateway"
+environment = "preview"
+
+# AI Gateway binding (available in both environments)
+[[ai]]
+binding = "AI"
