@@ -74,4 +74,18 @@ import api_v1 from "./app";
 app.route("/v1", api_v1);
 
 
-export default app;
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    try {
+      CanonicalEnvSchema.parse(env);
+    } catch (e) {
+      console.error("Failed to parse environment variables:", e);
+      return new Response("Internal Server Error: Invalid environment configuration.", { status: 500 });
+    }
+
+    const v1_app = createApp(env);
+    app.route("/v1", v1_app);
+
+    return app.fetch(request, env, ctx);
+  },
+};

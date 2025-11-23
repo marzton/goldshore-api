@@ -22,10 +22,10 @@ binding = "STORE"
 id = "<PROD_KV_ID>"
 preview_id = "<PREVIEW_KV_ID>"
 
-[[env.production.r2_buckets]]
-binding = "ASSETS"
-bucket_name = "goldshore-assets-prod"
-preview_bucket_name = "goldshore-assets-preview"
+# Routing
+PUBLIC_HOME = "https://goldshore.org"
+ADMIN_APP = "https://admin.goldshore.org"
+API_PUBLIC_URL = "https://api.goldshore.org"
 
 [[env.production.d1_databases]]
 binding = "DB"
