@@ -98,13 +98,11 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
     return false;
   }
 
-  if ("namedCurve" in verifyContext) {
-    try {
-      signature = ieeeP1363ToDer(signature);
-    } catch (error) {
-      console.error("failed to convert ecdsa signature", error);
-      return false;
-    }
+  try {
+    signature = prepareSignatureForVerify(signature, verifyParams);
+  } catch (error) {
+    console.error("failed to normalize jwt signature", error);
+    return false;
   }
 
   try {
@@ -346,6 +344,14 @@ function base64UrlToUint8Array(value: string): Uint8Array {
   }
 
   return bytes;
+}
+
+function prepareSignatureForVerify(signature: Uint8Array, params: VerifyParams): Uint8Array {
+  if (params.name !== "ECDSA") {
+    return signature;
+  }
+
+  return ieeeP1363ToDer(signature);
 }
 
 function ieeeP1363ToDer(signature: Uint8Array): Uint8Array {
