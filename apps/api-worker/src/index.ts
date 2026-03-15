@@ -6,7 +6,10 @@ import { bad, ok, unauthorized } from "./lib/util";
 import type { Env } from "./types";
 import { CanonicalEnvSchema } from "@goldshore/env";
 
-const app = new Hono<{ Bindings: Env; Variables: { cors: Headers; access?: AccessResult } }>();
+// Import v1 API routes
+import { createApp } from "./app";
+
+const app = new Hono<{ Bindings: Env }>();
 
 app.use("*", cors({
   origin: "*",
@@ -18,6 +21,7 @@ app.options("*", (c) => {
   return c.text("ok");
 });
 
+// 3. Health Check Endpoint
 app.get("/health", c => {
   return ok(
     {
@@ -45,6 +49,9 @@ const ensureAccess: MiddlewareHandler<{ Bindings: Env; Variables: { cors: Header
 
 app.use("/trade", ensureAccess);
 
+// 5. Existing /trade endpoint (re-integrated)
+// This was in the original file and seems important. We'll keep it.
+// It uses a separate Bearer token authentication, which is a common pattern for specific webhooks or service-to-service calls.
 app.post("/trade", async c => {
   const sharedSecret = c.env.TRADE_API_TOKEN;
   const authHeader = c.req.header("authorization");
@@ -75,6 +82,10 @@ export default {
       console.error("Failed to parse environment variables:", e);
       return new Response("Internal Server Error: Invalid environment configuration.", { status: 500 });
     }
+
+    const v1_app = createApp(env);
+    app.route("/v1", v1_app);
+
     return app.fetch(request, env, ctx);
   },
 };
