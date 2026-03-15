@@ -35,9 +35,9 @@ type SupportedImportParams =
   | { name: "RSASSA-PKCS1-v1_5"; hash: { name: HashName } }
   | { name: "ECDSA"; namedCurve: EcNamedCurve };
 
-type VerifyParams =
-  | { name: "RSASSA-PKCS1-v1_5" }
-  | { name: "ECDSA"; hash: { name: HashName } };
+type VerifyContext =
+  | { params: { name: "RSASSA-PKCS1-v1_5" } }
+  | { params: { name: "ECDSA"; hash: { name: HashName } }; namedCurve: EcNamedCurve };
 
 type KeyCache = {
   keys: Map<string, CryptoKey>;
@@ -92,8 +92,8 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
   const data = encoder.encode(`${parts[0]}.${parts[1]}`);
   let signature = base64UrlToUint8Array(parts[2]);
 
-  const verifyParams = getVerifyParams(key);
-  if (!verifyParams) {
+  const verifyContext = getVerifyContext(key);
+  if (!verifyContext) {
     console.error("unsupported key algorithm", key.algorithm);
     return false;
   }
@@ -106,7 +106,7 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
   }
 
   try {
-    return await crypto.subtle.verify(verifyParams, key, signature, data);
+    return await crypto.subtle.verify(verifyContext.params, key, signature, data);
   } catch (error) {
     console.error("access token verification failed", error);
     return false;
@@ -198,7 +198,10 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, forceReload = fal
 
           try {
             const cryptoKey = await crypto.subtle.importKey("jwk", jwk, algorithm, false, ["verify"]);
-            imported.set(jwk.kid, cryptoKey);
+            const keyType = cacheKeyType(algorithm);
+            const existing = imported.get(jwk.kid) ?? new Map<string, CryptoKey>();
+            existing.set(keyType, cryptoKey);
+            imported.set(jwk.kid, existing);
           } catch (error) {
             console.error("failed to import jwk", jwk.kid, error);
           }
@@ -215,6 +218,7 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, forceReload = fal
         cache.missingKids.clear();
       } else if (cache.keys.size === 0) {
         cache.expiresAt = 0;
+        cache.jwks = jwkMap;
       }
     })().catch((error) => {
       cache.inflight = null;
@@ -298,16 +302,16 @@ async function ensureKeyForAlgorithm(
   }
 }
 
-function getVerifyParams(key: CryptoKey): VerifyParams | null {
+function getVerifyContext(key: CryptoKey): VerifyContext | null {
   const algorithm = key.algorithm as { name: string; namedCurve?: EcNamedCurve };
 
   if (algorithm.name === "RSASSA-PKCS1-v1_5") {
-    return { name: "RSASSA-PKCS1-v1_5" };
+    return { params: { name: "RSASSA-PKCS1-v1_5" } };
   }
 
   if (algorithm.name === "ECDSA") {
     const hashName = curveHash(algorithm.namedCurve);
-    return { name: "ECDSA", hash: { name: hashName } };
+    return { params: { name: "ECDSA", hash: { name: hashName } }, namedCurve: algorithm.namedCurve ?? "P-256" };
   }
 
   return null;
@@ -317,6 +321,15 @@ function decodeSection<T>(section: string): T {
   const bytes = base64UrlToUint8Array(section);
   const text = new TextDecoder().decode(bytes);
   return JSON.parse(text) as T;
+}
+
+function decodeSignature(section: string): Uint8Array | null {
+  try {
+    return base64UrlToUint8Array(section);
+  } catch (error) {
+    console.error("invalid access token signature", error);
+    return null;
+  }
 }
 
 function base64UrlToUint8Array(value: string): Uint8Array {
@@ -415,6 +428,108 @@ function isAudienceValid(aud: AccessPayload["aud"], expected: string): boolean {
   if (!aud) return false;
   if (typeof aud === "string") return aud === expected;
   return aud.includes(expected);
+}
+
+function normalizeSignature(signature: Uint8Array, key: CryptoKey, verifyParams: VerifyParams): Uint8Array | null {
+  if (verifyParams.name !== "ECDSA") {
+    return signature;
+  }
+
+  const algorithm = key.algorithm as { name: string; namedCurve?: EcNamedCurve };
+  const curveSize = ecdsaCurveSize(algorithm.namedCurve);
+  if (!curveSize) {
+    console.error("unsupported ecdsa curve", algorithm.namedCurve);
+    return null;
+  }
+
+  if (signature.length !== curveSize * 2) {
+    console.error("unexpected ecdsa signature length", signature.length);
+    return null;
+  }
+
+  return joseToDerSignature(signature, curveSize);
+}
+
+function ecdsaCurveSize(curve: EcNamedCurve | undefined): number | null {
+  switch (curve) {
+    case "P-256":
+      return 32;
+    case "P-384":
+      return 48;
+    case "P-521":
+      return 66;
+    default:
+      return null;
+  }
+}
+
+function joseToDerSignature(signature: Uint8Array, size: number): Uint8Array {
+  const r = normalizeDerInteger(signature.slice(0, size));
+  const s = normalizeDerInteger(signature.slice(size));
+
+  const sequenceLength = 2 + encodeDerLength(r.length).length + r.length + 2 + encodeDerLength(s.length).length + s.length;
+  const sequenceLengthBytes = encodeDerLength(sequenceLength);
+  const der = new Uint8Array(1 + sequenceLengthBytes.length + sequenceLength);
+
+  let offset = 0;
+  der[offset++] = 0x30; // SEQUENCE
+  der.set(sequenceLengthBytes, offset);
+  offset += sequenceLengthBytes.length;
+
+  der[offset++] = 0x02; // INTEGER
+  const rLengthBytes = encodeDerLength(r.length);
+  der.set(rLengthBytes, offset);
+  offset += rLengthBytes.length;
+  der.set(r, offset);
+  offset += r.length;
+
+  der[offset++] = 0x02; // INTEGER
+  const sLengthBytes = encodeDerLength(s.length);
+  der.set(sLengthBytes, offset);
+  offset += sLengthBytes.length;
+  der.set(s, offset);
+
+  return der;
+}
+
+function normalizeDerInteger(bytes: Uint8Array): Uint8Array {
+  let firstNonZero = 0;
+  while (firstNonZero < bytes.length && bytes[firstNonZero] === 0) {
+    firstNonZero += 1;
+  }
+
+  let normalized = bytes.slice(firstNonZero);
+  if (normalized.length === 0) {
+    normalized = new Uint8Array(1);
+  }
+
+  if (normalized[0] & 0x80) {
+    const padded = new Uint8Array(normalized.length + 1);
+    padded.set(normalized, 1);
+    return padded;
+  }
+
+  return normalized;
+}
+
+function encodeDerLength(length: number): Uint8Array {
+  if (length < 0x80) {
+    return Uint8Array.of(length);
+  }
+
+  const bytes: number[] = [];
+  let remaining = length;
+  while (remaining > 0) {
+    bytes.unshift(remaining & 0xff);
+    remaining >>= 8;
+  }
+
+  const result = new Uint8Array(1 + bytes.length);
+  result[0] = 0x80 | bytes.length;
+  bytes.forEach((value, index) => {
+    result[index + 1] = value;
+  });
+  return result;
 }
 
 function curveHash(curve: EcNamedCurve | undefined): HashName {
