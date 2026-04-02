@@ -512,26 +512,6 @@ function normalizeDerInteger(bytes: Uint8Array): Uint8Array {
   return normalized;
 }
 
-function encodeDerLength(length: number): Uint8Array {
-  if (length < 0x80) {
-    return Uint8Array.of(length);
-  }
-
-  const bytes: number[] = [];
-  let remaining = length;
-  while (remaining > 0) {
-    bytes.unshift(remaining & 0xff);
-    remaining >>= 8;
-  }
-
-  const result = new Uint8Array(1 + bytes.length);
-  result[0] = 0x80 | bytes.length;
-  bytes.forEach((value, index) => {
-    result[index + 1] = value;
-  });
-  return result;
-}
-
 function curveHash(curve: EcNamedCurve | undefined): HashName {
   switch (curve) {
     case "P-384":
