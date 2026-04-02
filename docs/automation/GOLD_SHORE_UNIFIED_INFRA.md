@@ -65,7 +65,7 @@ Maintain a unified Cloudflare + GitHub deployment where:
 ### 3. DNS Configuration (Cloudflare DNS tab)
 - ✅ `goldshore.org` → `goldshore-web.pages.dev` (proxied)
 - ✅ `www.goldshore.org` → `goldshore-web.pages.dev` (proxied)
-- ❌ `api.goldshore.org` should not have a CNAME — the Worker route automatically binds traffic. (If present, remove any `api → goldshore.org` CNAME record.)
+- ⚠️ `api.goldshore.org` must resolve via Cloudflare (for example, using a proxied DNS record or Workers Custom Domain), but it should **not** be a CNAME pointing to the Pages origin (e.g., `goldshore-web.pages.dev` or `goldshore.org`). Remove or correct any such `api → goldshore.org`/Pages CNAME.
 
 ### 4. Access Integration
 - Protected routes use Cloudflare Access policy with:
