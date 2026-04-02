@@ -421,26 +421,6 @@ function isAudienceValid(aud: AccessPayload["aud"], expected: string): boolean {
   return aud.includes(expected);
 }
 
-function normalizeSignature(signature: Uint8Array, key: CryptoKey, verifyParams: VerifyParams): Uint8Array | null {
-  if (verifyParams.name !== "ECDSA") {
-    return signature;
-  }
-
-  const algorithm = key.algorithm as { name: string; namedCurve?: EcNamedCurve };
-  const curveSize = ecdsaCurveSize(algorithm.namedCurve);
-  if (!curveSize) {
-    console.error("unsupported ecdsa curve", algorithm.namedCurve);
-    return null;
-  }
-
-  if (signature.length !== curveSize * 2) {
-    console.error("unexpected ecdsa signature length", signature.length);
-    return null;
-  }
-
-  return joseToDerSignature(signature, curveSize);
-}
-
 function ecdsaCurveSize(curve: EcNamedCurve | undefined): number | null {
   switch (curve) {
     case "P-256":
