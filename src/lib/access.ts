@@ -323,15 +323,6 @@ function decodeSection<T>(section: string): T {
   return JSON.parse(text) as T;
 }
 
-function decodeSignature(section: string): Uint8Array | null {
-  try {
-    return base64UrlToUint8Array(section);
-  } catch (error) {
-    console.error("invalid access token signature", error);
-    return null;
-  }
-}
-
 function base64UrlToUint8Array(value: string): Uint8Array {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
   const padding = normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
