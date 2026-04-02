@@ -183,7 +183,7 @@ async function loadJwks(cache: KeyCache, config: AccessConfig, forceReload = fal
         throw new Error(`failed to fetch jwks (${res.status})`);
       }
 
-      const body = await res.json<{ keys?: JsonWebKey[] }>();
+      const body = (await res.json()) as { keys?: JsonWebKey[] };
       const keys = (body.keys ?? []) as AccessJwk[];
       const imported = new Map<string, CryptoKey>();
       const jwkByKid = new Map<string, AccessJwk>();
