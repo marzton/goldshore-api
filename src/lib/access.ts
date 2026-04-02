@@ -99,7 +99,7 @@ export async function requireAccess(req: Request, env?: AccessEnvironment): Prom
   }
 
   try {
-    signature = prepareSignatureForVerify(signature, verifyParams);
+    signature = prepareSignatureForVerify(signature, verifyContext.params);
   } catch (error) {
     console.error("failed to normalize jwt signature", error);
     return false;
