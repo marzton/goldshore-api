@@ -1,0 +1,36 @@
+repository: goldshore-admin
+description: >
+  Gold Shore Admin UI (Astro).
+  Protected by Cloudflare Access.
+  Hosted at https://docs.goldshore.org or https://admin.goldshore.org if reassigned.
+
+domain: https://admin.goldshore.org
+cloudflare_project: goldshore-admin
+
+scope:
+  allowed:
+    - src/**
+    - public/**
+    - components/**
+    - routes/**
+    - cockpit/**
+    - AI/INSTRUCTIONS/**
+  forbidden:
+    - ../goldshore-web/**
+    - ../goldshore-api/**
+    - ../goldshore-gateway/**
+    - wrangler.toml
+    - worker/**
+    - DNS or Cloudflare Routes
+
+dangerous_operations:
+  disallowed:
+    - modifying API schema
+    - altering gateway Worker behavior
+    - editing public site content
+    - deleting bindings
+
+agent_behavior:
+  respond_only_within_scope: true
+  ignore_external_commands: true
+  require_explicit_permission_for_cross_repo: true

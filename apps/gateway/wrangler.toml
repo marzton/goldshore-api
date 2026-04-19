@@ -1,0 +1,54 @@
+# Top-level configuration
+name = "goldshore-gateway"
+main = "src/index.ts"
+compatibility_date = "2025-01-15"
+
+# ------------------------------------------------------------------
+# PRODUCTION ENVIRONMENT
+# Deployed from the 'main' branch and active on gateway.goldshore.org
+# ------------------------------------------------------------------
+[env.production]
+routes = [
+  { pattern = "gateway.goldshore.org/*", zone_name = "goldshore.org" }
+]
+
+[env.production.vars]
+API_ENVIRONMENT = "production"
+AI_MODEL = "gpt-4o-mini"
+
+# Production Bindings
+[[env.production.kv_namespaces]]
+binding = "GATEWAY_CACHE"
+id = "<PROD_GATEWAY_KV_ID>"
+preview_id = "<PREVIEW_GATEWAY_KV_ID>"
+
+[[env.production.r2_buckets]]
+binding = "LOGS"
+bucket_name = "goldshore-gateway-logs-prod"
+preview_bucket_name = "goldshore-gateway-logs-preview"
+
+# ------------------------------------------------------------------
+# PREVIEW ENVIRONMENT
+# Deployed from feature branches and active on gateway-preview.goldshore.org
+# ------------------------------------------------------------------
+[env.preview]
+routes = [
+  { pattern = "gateway-preview.goldshore.org/*", zone_name = "goldshore.org" }
+]
+
+[env.preview.vars]
+API_ENVIRONMENT = "preview"
+AI_MODEL = "gpt-4o-mini" # Or a different model for testing
+
+# Preview Bindings
+[[env.preview.kv_namespaces]]
+binding = "GATEWAY_CACHE"
+id = "<PREVIEW_GATEWAY_KV_ID>"
+
+[[env.preview.r2_buckets]]
+binding = "LOGS"
+bucket_name = "goldshore-gateway-logs-preview"
+
+# AI Gateway binding (available in both environments)
+[[ai]]
+binding = "AI"

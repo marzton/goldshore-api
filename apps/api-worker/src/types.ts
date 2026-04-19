@@ -1,8 +1,5 @@
-export interface Env {
-  KV_CACHE?: KVNamespace;
-  DB?: D1Database;
-  R2?: R2Bucket;
-  JOBS?: Queue;
+import { z } from 'zod';
+import { envSchema } from '@goldshore/env';
 
   ACCESS_AUDIENCE?: string;
   ACCESS_ISSUER?: string;
@@ -28,3 +25,9 @@ export interface Env {
   GOOGLE_CSE_ID?: string;
   TRADE_WEBHOOK_TOKEN?: string;
 }
+// We can still extend the base schema if there are worker-specific vars
+const apiWorkerSchema = envSchema.extend({
+  // worker-specific vars here
+});
+
+export type Env = z.infer<typeof apiWorkerSchema>;

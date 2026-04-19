@@ -1,0 +1,39 @@
+{
+  "name": "gs-deploy-agent",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-03-07",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "ENV": "production",
+    "CLOUDFLARE_ACCOUNT_ID": "f77de112d2019e5456a3198a8bb50bd2"
+  },
+  // Secrets — set via:
+  //   wrangler secret put GITHUB_TOKEN --name gs-deploy-agent
+  //   wrangler secret put CLOUDFLARE_API_TOKEN --name gs-deploy-agent
+  //   wrangler secret put AGENT_TOKEN --name gs-deploy-agent
+  //
+  // GITHUB_TOKEN:         fine-grained PAT — Contents RW, PRs RW, Metadata R, Administration RW
+  // CLOUDFLARE_API_TOKEN: account-owned token — Workers Scripts:Edit, Routes:Edit, Account Settings:Read
+  // AGENT_TOKEN:          random secret you generate — protects all /api/* routes
+  //                       generate: openssl rand -hex 32
+  "kv_namespaces": [
+    {
+      "binding": "GS_CONFIG",
+      "id": "5f13370575784c9dacff522121104cb3"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "AUDIT_DB",
+      "database_name": "gs_audit_db",
+      "database_id": "1ae71d76-188f-481b-91d9-db2d39013f68"
+    }
+  ],
+  "routes": [
+    { "pattern": "agent-deploy.goldshore.ai/*", "zone_name": "goldshore.ai" }
+  ]
+}

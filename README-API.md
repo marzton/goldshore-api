@@ -2,6 +2,16 @@
 
 Cloudflare Workers API that orchestrates trading, market data, news/filings, research, ads, reports, and backtests for Goldshore. This document captures the modular `/v1` surface so new providers can plug in without touching the entrypoint.
 
+## GoldShore-Agent surfaces
+
+- `GET /health` — readiness probe (unauthenticated).
+- `GET /status` — metadata describing the active worker, model, and known routes.
+- `POST /codex-agent` — authenticated command execution (`status`, `generate-cover`).
+- `GET /autoapply` — returns cached job matches for partners (GET-only on BanProof alias).
+- `POST /autoapply` — authenticated trigger to refresh job matches and persist to KV.
+- `GET /logs` — authenticated retrieval of the latest system log entries.
+- `GET /v1/whoami` — Access-introspected identity response.
+
 ## Routing overview
 
 - `GET /health` — public readiness probe.
@@ -66,25 +76,41 @@ Each `/v1` handler returns placeholder JSON from `src/handlers/*` until a provid
 - Queue producer `JOBS` for async workers (report + backtest jobs).
 - Queue producer `JOBS` (and matching consumer) for async workers (report + backtest jobs).
 
-### Provisioning resources
+### Provisioning Resources
 
-Create the Cloudflare resources once per environment (names/IDs can be swapped to match your account):
+The `wrangler.toml` file uses placeholder IDs for Cloudflare resources. Before you can run or deploy the worker, you must create these resources and update the configuration with the correct IDs.
+
+Run the following commands to provision the necessary resources. Replace the names if desired, but ensure they match the bindings in `wrangler.toml`.
 
 ```bash
-# KV
-wrangler kv namespace create KV_CACHE
+# KV Namespaces
+wrangler kv:namespace create "SYSTEM_LOGS"
+wrangler kv:namespace create "APPLIED_JOBS"
+wrangler kv:namespace create "AGENT_STATE"
+wrangler kv:namespace create "KV_CACHE"
 
-# D1 (then load schema with the command below)
+# D1 Database
 wrangler d1 create goldshore_db
 
-# Queues (binds as "jobs" in wrangler.jsonc)
-wrangler queues create jobs
-
-# R2
+# R2 Bucket
 wrangler r2 bucket create goldshore-reports
+
+# Queue
+wrangler queues create jobs
 ```
 
-Update the generated IDs in `wrangler.jsonc` after creation.
+After running these commands, `wrangler` will output the configuration for each resource, including the ID. Copy these IDs and paste them into the corresponding sections of your `wrangler.toml` file.
+
+For example, after creating the `KV_CACHE` namespace, you will see output similar to this:
+
+```
+{
+  "binding": "KV_CACHE",
+  "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+}
+```
+
+Update the `id` in the `[[kv_namespaces]]` section of `wrangler.toml`. Do the same for the D1 `database_id`, R2 bucket, and Queue.
 
 ## Required secrets
 

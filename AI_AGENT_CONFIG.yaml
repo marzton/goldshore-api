@@ -1,0 +1,6 @@
+# Gold Shore Labs - AI Agent Configuration
+
+# REPO_LOCK_MODE
+# This setting prevents the agent from making changes outside of this repository.
+# To allow cross-repo operations, a user must explicitly disable this lock.
+repo_lock: true

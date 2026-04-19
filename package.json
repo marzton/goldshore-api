@@ -1,5 +1,5 @@
 {
-  "name": "goldshore-api",
+  "name": "gs-api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,12 +8,15 @@
     "deploy": "wrangler deploy",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "fmt": "prettier -w .",
-    "build": "tsc -p tsconfig.json"
+    "build": "echo 'Building Pages stub...' && mkdir -p dist",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241022.0",
+    "@types/node": "^24.9.1",
     "prettier": "^3.3.3",
     "typescript": "^5.6.3",
-    "wrangler": "^4.42.2"
+    "vitest": "^3.2.4",
+    "wrangler": "^4.80.0"
   }
 }

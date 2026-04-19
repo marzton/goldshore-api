@@ -1,28 +1,25 @@
-import { corsHeaders } from "./lib/cors";
-import { ok, unauthorized, notFound, serverError } from "./lib/util";
-import { requireAccess } from "./lib/access";
+import { Hono } from "hono";
+import type { MiddlewareHandler } from "hono";
+import { cors } from 'hono/cors'
+import { requireAccess, type AccessResult } from "./lib/access";
+import { bad, ok, unauthorized } from "./lib/util";
 import type { Env } from "./types";
+import { CanonicalEnvSchema } from "@goldshore/env";
 
-import { getQuote, getOHLC } from "./handlers/market";
-import { getOrders, createOrder } from "./handlers/broker";
-import { headlines } from "./handlers/news";
-import { listFilings } from "./handlers/edgar";
-import { ytSearch } from "./handlers/youtube";
-import { generateReport, getReport } from "./handlers/reports";
-import { postBacktest, getBacktest } from "./handlers/backtests";
+// Import v1 API routes
+import { createApp } from "./app";
 
-export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
-    const url = new URL(req.url);
-    const cors = corsHeaders(env, req);
+const app = new Hono<{ Bindings: Env }>();
 
-    if (req.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: cors });
-    }
+app.use("*", cors({
+  origin: "*",
+  allowHeaders: ["Authorization", "Content-Type"],
+  allowMethods: ["GET", "POST", "OPTIONS"],
+}));
 
-    if (url.pathname === "/health") {
-      return ok({ ok: true, service: "goldshore-api", time: new Date().toISOString() }, cors);
-    }
+app.options("*", (c) => {
+  return c.text("ok");
+});
 
     if (url.pathname.startsWith("/v1/")) {
       if (!(await requireAccess(req, env))) {
@@ -66,8 +63,71 @@ export default {
       }
 
       return notFound(cors);
+// 3. Health Check Endpoint
+app.get("/health", c => {
+  return ok(
+    {
+      ok: true,
+      service: "api-worker",
+      time: new Date().toISOString()
+    }
+  );
+});
+
+const ensureAccess: MiddlewareHandler<{ Bindings: Env; Variables: { cors: Headers; access?: AccessResult } }> = async (
+  c,
+  next
+) => {
+  const result = await requireAccess(c.req.raw, c.env);
+  if (!result.authorized) {
+    const headers = new Headers();
+    headers.set("WWW-Authenticate", 'Bearer realm="Cloudflare Access"');
+    return unauthorized(headers);
+  }
+
+  c.set("access", result);
+  await next();
+};
+
+app.use("/trade", ensureAccess);
+
+// 5. Existing /trade endpoint (re-integrated)
+// This was in the original file and seems important. We'll keep it.
+// It uses a separate Bearer token authentication, which is a common pattern for specific webhooks or service-to-service calls.
+app.post("/trade", async c => {
+  const sharedSecret = c.env.TRADE_API_TOKEN;
+  const authHeader = c.req.header("authorization");
+
+  if (!sharedSecret) {
+    return bad("Trading is not configured on this deployment.", 503);
+  }
+
+  if (!authHeader || authHeader !== `Bearer ${sharedSecret}`) {
+    const responseHeaders = new Headers();
+    responseHeaders.set("WWW-Authenticate", 'Bearer realm="Goldshore API"');
+    return unauthorized(responseHeaders);
+  }
+
+  return ok({ status: "ok" });
+});
+
+// --- OpenAPI Routes ---
+import api_v1 from "./app";
+app.route("/v1", api_v1);
+
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    try {
+      CanonicalEnvSchema.parse(env);
+    } catch (e) {
+      console.error("Failed to parse environment variables:", e);
+      return new Response("Internal Server Error: Invalid environment configuration.", { status: 500 });
     }
 
-    return notFound(cors);
-  }
+    const v1_app = createApp(env);
+    app.route("/v1", v1_app);
+
+    return app.fetch(request, env, ctx);
+  },
 };

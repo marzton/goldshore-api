@@ -1,0 +1,28 @@
+name = "goldshore-control"
+main = "src/index.ts"
+compatibility_date = "2025-01-15"
+
+account_id = "YOUR_CLOUDFLARE_ACCOUNT_ID"
+
+# Route for production control panel API
+routes = [
+  { pattern = "control.goldshore.org/*", zone_name = "goldshore.org" }
+]
+
+[vars]
+# Non-secret config; secrets go via `wrangler secret put`
+CLOUDFLARE_ACCOUNT_ID = "YOUR_CLOUDFLARE_ACCOUNT_ID"
+CLOUDFLARE_ZONE_ID    = "YOUR_GOLDSHORE_ORG_ZONE_ID"
+
+# Optional: handy for internal routing
+API_BASE_URL      = "https://api.goldshore.org"
+GATEWAY_BASE_URL  = "https://gateway.goldshore.org"
+
+# If you use Cloudflare Access on this host, you can pass JWKS info here later
+CF_ACCESS_ISS      = "https://goldshore.cloudflareaccess.com"
+CF_ACCESS_JWKS_URL = "https://goldshore.cloudflareaccess.com/cdn-cgi/access/certs"
+
+[env.preview]
+routes = [
+  { pattern = "control-preview.goldshore.org/*", zone_name = "goldshore.org" }
+]
