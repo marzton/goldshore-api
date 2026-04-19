@@ -21,6 +21,48 @@ app.options("*", (c) => {
   return c.text("ok");
 });
 
+    if (url.pathname.startsWith("/v1/")) {
+      if (!(await requireAccess(req, env))) {
+        return unauthorized(cors);
+      }
+
+      try {
+        if (url.pathname === "/v1/whoami") {
+          const email = req.headers.get("CF-Access-Authenticated-User-Email") || null;
+          return ok({ ok: true, email }, cors);
+        }
+
+        if (url.pathname === "/v1/market/quote") return getQuote(env, url, cors);
+        if (url.pathname === "/v1/market/ohlc") return getOHLC(env, url, cors);
+
+        if (url.pathname === "/v1/broker/orders" && req.method === "GET") return getOrders(env, url, cors);
+        if (url.pathname === "/v1/broker/orders" && req.method === "POST") return createOrder(env, req, cors);
+
+        if (url.pathname === "/v1/news/headlines") return headlines(env, url, cors);
+        if (url.pathname === "/v1/edgar/filings") return listFilings(env, url, cors);
+
+        if (url.pathname === "/v1/youtube/search") return ytSearch(env, url, cors);
+
+        if (url.pathname === "/v1/reports/generate" && req.method === "POST") return generateReport(env, req, cors);
+        if (url.pathname.startsWith("/v1/reports/") && req.method === "GET") {
+          const id = url.pathname.split("/").pop();
+          if (id) {
+            return getReport(env, id, cors);
+          }
+        }
+
+        if (url.pathname === "/v1/backtests/run" && req.method === "POST") return postBacktest(env, req, cors);
+        if (url.pathname.startsWith("/v1/backtests/") && req.method === "GET") {
+          const id = url.pathname.split("/").pop();
+          if (id) {
+            return getBacktest(env, id, cors);
+          }
+        }
+      } catch (error) {
+        return serverError(error, cors);
+      }
+
+      return notFound(cors);
 // 3. Health Check Endpoint
 app.get("/health", c => {
   return ok(
