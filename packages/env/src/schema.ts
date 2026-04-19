@@ -13,7 +13,7 @@ const UniversalEnvSchema = z.object({
   CLOUDFLARE_ZONE_ID: z.string().min(1, 'Cloudflare Zone ID is required'),
   CLOUDFLARE_ENV: z.enum(['dev', 'staging', 'prod']),
   CLOUDFLARE_PROJECT: z.string().min(1, 'Cloudflare project name is required'),
-  CLOUDFLARE_BASE_DOMAIN: z.string().min(1),
+  CLOUDFLARE_BASE_DOMAIN: z.string().url('Must be a valid URL'),
   CLOUDFLARE_PUBLIC_URL: z.string().url('Must be a valid URL'),
 });
 
@@ -24,7 +24,7 @@ const UniversalEnvSchema = z.object({
  * =================================================================================
  */
 const AccessAuthEnvSchema = z.object({
-  CF_ACCESS_TEAM_DOMAIN: z.string().min(1),
+  CF_ACCESS_TEAM_DOMAIN: z.string().url(),
   CF_ACCESS_AUD: z.string(),
   CF_ACCESS_JWKS_URL: z.string().url(),
   CF_ACCESS_POLICY_ID: z.string().optional(),
@@ -173,17 +173,31 @@ const ProjectSpecificEnvSchema = z.object({
  * Use this to validate the environment for any Gold Shore application.
  * =================================================================================
  */
-export const CanonicalEnvSchema = UniversalEnvSchema
-  .and(AccessAuthEnvSchema)
-  .and(InternalServicesEnvSchema)
-  .and(StorageInfraEnvSchema)
-  .and(SecurityEnvSchema)
-  .and(FrontendRuntimeEnvSchema)
-  .and(LoggingEnvSchema)
-  .and(AIGatewayEnvSchema)
-  .and(TerraformStateEnvSchema)
-  .and(RoutingEnvSchema)
-  .and(ProjectSpecificEnvSchema);
+export const CanonicalEnvSchema = z.intersection(
+  UniversalEnvSchema,
+  z.intersection(
+    AccessAuthEnvSchema,
+    z.intersection(
+      InternalServicesEnvSchema,
+      z.intersection(
+        StorageInfraEnvSchema,
+        z.intersection(
+          SecurityEnvSchema,
+          z.intersection(
+            FrontendRuntimeEnvSchema,
+            z.intersection(
+              LoggingEnvSchema,
+              z.intersection(
+                AIGatewayEnvSchema,
+                z.intersection(TerraformStateEnvSchema, RoutingEnvSchema)
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+).and(ProjectSpecificEnvSchema);
 
 /**
  * =================================================================================
