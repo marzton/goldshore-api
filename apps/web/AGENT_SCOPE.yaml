@@ -1,0 +1,38 @@
+repository: goldshore-web
+description: >
+  Public website for Gold Shore Labs.
+  Hosted on Cloudflare Pages at https://goldshore.org and https://www.goldshore.org.
+
+domain: https://goldshore.org
+cloudflare_project: goldshore-web
+
+scope:
+  allowed:
+    - apps/web/src/**
+    - apps/web/public/**
+    - apps/web/dist/**
+    - styles/**
+    - components/**
+    - layouts/**
+    - AI/INSTRUCTIONS/**
+  forbidden:
+    - ../goldshore-admin/**
+    - ../goldshore-api/**
+    - ../goldshore-gateway/**
+    - wrangler.toml
+    - worker/**
+    - Cloudflare Worker routes
+    - DNS manipulations
+
+dangerous_operations:
+  disallowed:
+    - modifying API endpoints
+    - modifying gateway routes
+    - altering admin logic
+    - changing Pages project IDs
+    - adding Wrangler commands
+
+agent_behavior:
+  respond_only_within_scope: true
+  ignore_external_commands: true
+  require_explicit_permission_for_cross_repo: true

@@ -1,0 +1,104 @@
+// goldshore-api — rename target for gs-api
+// Serves: api.goldshore.ai
+{
+  "name": "goldshore-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-10-19",
+  "routes": [
+    {
+      "pattern": "api.goldshore.org/*",
+      "zone_name": "goldshore.org"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      // Production KV namespace for cached API responses.
+      // This value must point at the existing namespace; deployments fail if replaced with a placeholder.
+      "binding": "KV_CACHE",
+      // Keep this production namespace identifier in source control. There is
+      // no build step that injects it, so deployments rely on this exact ID.
+      "id": "578fc33519014f418bd9712c61f593db"
+    }
+  ],
+  "d1_databases": [
+    {
+      // Production D1 database backing the worker API.
+      // The database identifier is fixed in Cloudflare; do not replace it during config templating.
+      "binding": "DB",
+      "database_name": "goldshore_db",
+      // This binding is resolved directly from the configuration during
+      // deploys; using a placeholder would break the production worker.
+      "database_id": "33b71eca-4987-4a0c-8721-c1c777b8b6a3"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "R2",
+      "bucket_name": "goldshore-reports"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "JOBS",
+        "queue": "jobs"
+      }
+    ]
+  },
+  "vars": {
+    "ENV": "production",
+    "GIT_SHA": "",   // injected at deploy time via CI: --var GIT_SHA:$(git rev-parse --short HEAD)
+    "LANG": "en"
+  },
+  // Secrets (set via: wrangler secret put <n> --name goldshore-api)
+  // OPENAI_API_KEY
+  // GEMINI_API_KEY
+  // CONTROL_SYNC_TOKEN
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "9cc2209906a94851b704be57543987a9"  // GS_API_DATA
+    },
+    {
+      "binding": "KV_CACHE",
+      "id": "895b3586e1ce46c5b33f7a2fdbdad314"
+    },
+    {
+      "binding": "GS_CONFIG",
+      "id": "5f13370575784c9dacff522121104cb3"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "gs_platform_db",
+      "database_id": "9703574e-adb7-481e-8d98-96f8ce5f8a90"
+    },
+    {
+      "binding": "AUDIT_DB",
+      "database_name": "gs_audit_db",
+      "database_id": "1ae71d76-188f-481b-91d9-db2d39013f68"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "ASSETS",
+      "bucket_name": "gs-assets"
+    },
+    {
+      "binding": "USER_UPLOADS",
+      "bucket_name": "user-uploads"  // CREATE: wrangler r2 bucket create user-uploads
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "GS_EVENTS",
+        "queue": "gs-events"  // CREATE: wrangler queues create gs-events
+      }
+    ]
+  },
+  "routes": [
+    { "pattern": "api.goldshore.ai/*", "zone_name": "goldshore.ai" }
+  ]
+}

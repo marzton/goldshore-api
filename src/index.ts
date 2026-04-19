@@ -49,6 +49,8 @@ export default {
       return handleStatus(env, cors);
     }
 
+    if (url.pathname.startsWith("/v1/")) {
+      if (!(await requireAccess(req, env))) return unauthorized(CH);
     if (url.pathname === "/logs" && request.method === "GET") {
       const access = await requireAccess(request, env);
       if (!access.authorized) {
