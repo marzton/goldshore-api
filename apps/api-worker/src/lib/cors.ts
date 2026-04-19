@@ -47,6 +47,30 @@ function isOriginAllowed(origin: string, allowList: string[]): boolean {
   }
 }
 
+export function corsHeaders(env: Env, req: Request): HeadersInit {
+  const origin = req.headers.get("Origin") || "";
+  const allowList = env.CORS_ALLOWED_ORIGINS || env.CORS_ORIGINS || "";
+  const allowed = buildAllowedOrigins(allowList);
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Methods": ALLOWED_METHODS,
+    "Access-Control-Allow-Headers": ALLOWED_HEADERS,
+    "Access-Control-Max-Age": "86400",
+    Vary: "Origin",
+  };
+
+  if (allowed.length === 0) {
+    headers["Access-Control-Allow-Origin"] = "*";
+    delete headers.Vary;
+    return headers;
+  }
+
+  const allowedOrigin = resolveAllowedOrigin(origin, allowed);
+  if (allowedOrigin) {
+    headers["Access-Control-Allow-Origin"] = allowedOrigin;
+    if (allowedOrigin === "*") delete headers.Vary;
+  }
+
+  return headers;
 function matchesPattern(url: URL, pattern: string): boolean {
   if (!pattern.includes("*")) {
     return `${url.protocol}//${url.host}`.toLowerCase() === pattern.toLowerCase();

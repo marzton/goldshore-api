@@ -12,6 +12,11 @@ This directory contains the root configuration for the GoldShore monorepo.
 
 This repository's root is linked to a **Cloudflare Pages** project named `goldshore-dashboard`.
 
+
+## Automation directive
+
+For deployment agents or GitHub Actions that orchestrate the goldshore.org stack, follow the [Gold Shore Unified Infrastructure agent directive](docs/automation/GOLD_SHORE_UNIFIED_INFRA.md). It explains how the Cloudflare Pages front-end and Cloudflare Worker API share the domain without conflict and enumerates the validation steps expected before and after deploys.
+## Deploy
 -   **Purpose:** This project serves as a simple, static diagnostics and status dashboard. It is a repurposed, undeletable artifact from a previous project structure.
 -   **Source:** The content for the dashboard is located in the `/dist` directory.
 -   **Configuration:** The build settings for this Pages project are defined in the `wrangler.toml` file at the root of this repository.
