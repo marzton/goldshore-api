@@ -1,24 +1,24 @@
-# GoldShore Monorepo Root
+# goldshore-api — GoldShore API Worker
 
-This directory contains the root configuration for the GoldShore monorepo.
+## Repo → Worker → Domain
+| Script | CF Worker | Domain | Status |
+|--------|-----------|--------|--------|
+| `src/index.ts` | `gs-api` Worker | `api.goldshore.ai` | ✅ Live |
 
-## Directory Structure
+## Cloudflare Account
+- **Account:** Gold Shore Labs (`f77de112d2019e5456a3198a8bb50bd2`)
+- **Worker:** `gs-api`
+- **D1:** `gs_platform_db` (binding: `DB`) · `gs_audit_db` (binding: `AUDIT_DB`)
+- **KV:** `GS_API_DATA` (binding: `KV`)
+- **R2:** `gs-assets` (binding: `ASSETS`)
+- **Queue producer:** `goldshore-jobs` (binding: `QUEUE`)
 
--   `/apps`: Contains the source code for all GoldShore applications (e.g., `api-worker`, `web`, `admin`). Each application is a self-contained project.
--   `/packages`: Contains shared libraries and utilities used across multiple applications.
--   `/.github/workflows`: Contains the CI/CD pipelines for deploying the applications.
+## Routes
+- `GET  /health` — public health check
+- `POST /api/contact` — lead form → D1 + MailChannels
+- `POST /api/lead` — alias for contact
+- `GET  /api/status` — worker status
+- `POST /armsway/order` — PayPal order (future)
 
-## Root Cloudflare Pages Project: `goldshore-dashboard`
-
-This repository's root is linked to a **Cloudflare Pages** project named `goldshore-dashboard`.
-
-
-## Automation directive
-
-For deployment agents or GitHub Actions that orchestrate the goldshore.org stack, follow the [Gold Shore Unified Infrastructure agent directive](docs/automation/GOLD_SHORE_UNIFIED_INFRA.md). It explains how the Cloudflare Pages front-end and Cloudflare Worker API share the domain without conflict and enumerates the validation steps expected before and after deploys.
-## Deploy
--   **Purpose:** This project serves as a simple, static diagnostics and status dashboard. It is a repurposed, undeletable artifact from a previous project structure.
--   **Source:** The content for the dashboard is located in the `/dist` directory.
--   **Configuration:** The build settings for this Pages project are defined in the `wrangler.toml` file at the root of this repository.
-
-**Important:** This Pages project is **NOT** the canonical API. The authoritative API is the Cloudflare Worker named `goldshore-api`, which is managed and deployed from the `/apps/api-worker` directory.
+## Secrets needed
+`OPENAI_API_KEY` · `GEMINI_API_KEY` · `CONTROL_SYNC_TOKEN` · `CF_AIG_TOKEN`
