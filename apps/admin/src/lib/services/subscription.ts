@@ -87,33 +87,43 @@ export class SubscriptionService {
     const subscriptionId = subscriptionResponse.meta.last_row_id;
 
     if (features?.length) {
-      for (const feature of features) {
-        await this.DB.prepare(SUBSCRIPTION_QUERIES.INSERT_FEATURE)
-          .bind(feature.name, feature.description || null)
-          .run();
+      // First, ensure all features exist and get their IDs
+      const featureQueries = features.map((feature) =>
+        this.DB.prepare(SUBSCRIPTION_QUERIES.INSERT_FEATURE).bind(
+          feature.name,
+          feature.description || null,
+        ),
+      );
 
-        const featureIdResponse = await this.DB.prepare(
-          SUBSCRIPTION_QUERIES.SELECT_FEATURE_ID,
-        )
-          .bind(feature.name)
-          .all();
+      const selectQueries = features.map((feature) =>
+        this.DB.prepare(SUBSCRIPTION_QUERIES.SELECT_FEATURE_ID).bind(
+          feature.name,
+        ),
+      );
 
+      const results = await this.DB.batch([...featureQueries, ...selectQueries]);
+
+      const featureIdResponses = results.slice(features.length);
+      const relationshipQueries = [];
+
+      for (let i = 0; i < features.length; i++) {
+        const featureIdResponse = featureIdResponses[i];
         if (!featureIdResponse.success || !featureIdResponse.results.length) {
-          throw new Error(`Could not get ID for feature: ${feature.name}`);
+          throw new Error(`Could not get ID for feature: ${features[i].name}`);
         }
 
         const featureId = featureIdResponse.results[0].id;
-        const relationshipResponse = await this.DB.prepare(
-          SUBSCRIPTION_QUERIES.INSERT_SUBSCRIPTION_FEATURE,
-        )
-          .bind(subscriptionId, featureId)
-          .run();
+        relationshipQueries.push(
+          this.DB.prepare(SUBSCRIPTION_QUERIES.INSERT_SUBSCRIPTION_FEATURE).bind(
+            subscriptionId,
+            featureId,
+          ),
+        );
+      }
 
-        if (!relationshipResponse.success) {
-          throw new Error(
-            `Failed to link feature ${feature.name} to subscription`,
-          );
-        }
+      const relationshipResults = await this.DB.batch(relationshipQueries);
+      if (relationshipResults.some((r) => !r.success)) {
+        throw new Error(`Failed to link features to subscription`);
       }
     }
 
