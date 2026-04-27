@@ -10,7 +10,7 @@ This runbook is the **manual cutover gate** for Cloudflare dashboard changes tha
 
 ### goldshore.ai
 - `gw.goldshore.ai` → Worker `gs-platform`
-- `api.goldshore.ai` → Worker `gs-api`
+- `api.goldshore.ai` → Worker `gs-api` (standby/migration target; not primary while `.org` is canonical)
 - `agent.goldshore.ai` → Worker `gs-agent`
 - `goldshore.ai` and `www.goldshore.ai` → Pages (`gs-web`) if intentionally web-owned
 
@@ -25,7 +25,8 @@ This runbook is the **manual cutover gate** for Cloudflare dashboard changes tha
 ### 1) Fix Cloudflare Access first (highest risk)
 For the active Access app protecting the runtime surface:
 - Replace policy: `non_identity + everyone`
-- With policy: `identity + email domain @goldshore.ai`
+- With policy: `identity` with the existing production allowlist preserved (`*@goldshore.org` and existing break-glass identities)
+- Only add `*@goldshore.ai` after a planned identity migration that keeps `.org` access functional during transition
 
 Why first:
 - Existing posture behaves like an open gate.
@@ -43,8 +44,9 @@ Control:
 ### 2) Attach Worker custom domains
 In Workers:
 - `gs-platform` → add `gw.goldshore.ai`
-- `gs-api` → add `api.goldshore.ai`
+- `gs-api` → keep `api.goldshore.org` as the active production API custom domain (current repo contract)
 - `gs-agent` → add `agent.goldshore.ai`
+- Do **not** switch production clients to `api.goldshore.ai` in this runbook unless the repository config (`apps/api-worker/wrangler.toml`, `apps/web/wrangler.toml`) is migrated in the same change window
 
 After each binding, verify:
 1. Custom domain is attached to the intended Worker.
@@ -81,8 +83,11 @@ Also verify:
 ### 6) Verify hostnames and health
 Run after changes propagate:
 - `curl -I https://gw.goldshore.ai/health`
-- `curl -I https://api.goldshore.ai/health`
+- `curl -I https://api.goldshore.org/health`
 - `curl -I https://agent.goldshore.ai/health`
+
+Optional (migration readiness only, not production cutover):
+- `curl -I https://api.goldshore.ai/health`
 
 Also verify public DNS resolution for:
 - New TXT records (SPF/DMARC)
@@ -93,16 +98,17 @@ No deploy/cutover continuation until steps 1-6 succeed.
 
 ## Architecture cautions
 1. **`api.goldshore.ai` vs `api.goldshore.org`**
-   - Freeze the primary API hostname now.
-   - If both must exist, assign one canonical host and explicit redirect/routing ownership.
+   - Current production contract in-repo is `api.goldshore.org`; treat it as canonical until configuration is migrated.
+   - If both must exist temporarily, document exact ownership and redirects before any client/API switch.
 2. **`goldshore.ai` ownership model**
    - If Git build is disconnected for `goldshore-ai`, ensure `gs-web` Pages is the intentional owner of `goldshore.ai`.
    - Remove split-brain paths from docs and deployment automation.
 
 ## Change Control Checklist
-- [ ] Access policy updated to identity + `@goldshore.ai`
+- [ ] Access policy updated to identity while preserving current `*@goldshore.org` allowlist (and break-glass identities)
 - [ ] Stale Access apps removed (listed duplicates)
 - [ ] Worker custom domains attached (`gw`, `api`, `agent`)
+- [ ] `api.goldshore.org` remains the active production API endpoint unless coordinated config migration is completed
 - [ ] `goldshore-ai` Git build disconnected
 - [ ] `goldshore.org` SPF + DMARC records added
 - [ ] `armsway.com` Cloudflare MX added with correct priorities
