@@ -1,14 +1,14 @@
 {
-  "zone_name": "goldshore.ai",
+  "zone_name": "goldshore.org",
   "required_dns": [
-    "api.goldshore.ai"
+    "api.goldshore.org"
   ],
   "required_routes": [
-    "api.goldshore.ai/*"
+    "api.goldshore.org/*"
   ],
   "forbidden_routes": [
-    "goldshore.ai/*",
-    "www.goldshore.ai/*"
+    "goldshore.org/*",
+    "www.goldshore.org/*"
   ],
   "required_kv_namespaces": []
 }
