@@ -12,6 +12,6 @@
     "wrangler": "^3.0.0"
   },
   "dependencies": {
-    "@goldshore/env": "workspace:*"
+    "@goldshore/env": "file:../../packages/env"
   }
 }
