@@ -46,7 +46,7 @@ In Workers:
 - `gs-platform` → add `gw.goldshore.ai`
 - `gs-api` → keep `api.goldshore.org` as the active production API custom domain (current repo contract)
 - `gs-agent` → add `agent.goldshore.ai`
-- Do **not** switch production clients to `api.goldshore.ai` in this runbook unless the repository config (`apps/api-worker/wrangler.toml`, `apps/web/wrangler.toml`) is migrated in the same change window
+- Do **not** switch production clients to `api.goldshore.ai` in this runbook unless the repository config (`apps/api-worker/wrangler.toml`, `apps/web/wrangler.toml`, and `apps/web/_headers` CSP `connect-src`) is migrated in the same change window
 
 After each binding, verify:
 1. Custom domain is attached to the intended Worker.
@@ -108,7 +108,7 @@ No deploy/cutover continuation until steps 1-6 succeed.
 - [ ] Access policy updated to identity while preserving current `*@goldshore.org` allowlist (and break-glass identities)
 - [ ] Stale Access apps removed (listed duplicates)
 - [ ] Worker custom domains attached (`gw`, `api`, `agent`)
-- [ ] `api.goldshore.org` remains the active production API endpoint unless coordinated config migration is completed
+- [ ] `api.goldshore.org` remains the active production API endpoint unless coordinated config migration (`apps/api-worker/wrangler.toml`, `apps/web/wrangler.toml`, and `apps/web/_headers` CSP `connect-src`) is completed
 - [ ] `goldshore-ai` Git build disconnected
 - [ ] `goldshore.org` SPF + DMARC records added
 - [ ] `armsway.com` Cloudflare MX added with correct priorities
