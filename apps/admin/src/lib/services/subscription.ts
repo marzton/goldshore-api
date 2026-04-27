@@ -14,6 +14,8 @@ export const SUBSCRIPTION_QUERIES = {
   INSERT_SUBSCRIPTION: `INSERT INTO subscriptions (name, description, price) VALUES(?, ?, ?)`,
   INSERT_FEATURE: `INSERT OR IGNORE INTO features(name, description) VALUES(?, ?)`,
   SELECT_FEATURE_ID: `SELECT id FROM features WHERE name = ?`,
+  SELECT_FEATURE_IDS: (count) =>
+    `SELECT id, name FROM features WHERE name IN (${Array(count).fill("?").join(",")})`,
   INSERT_SUBSCRIPTION_FEATURE: `INSERT INTO subscription_features(subscription_id, feature_id) VALUES(?, ?)`,
 };
 
@@ -86,33 +88,51 @@ export class SubscriptionService {
     const subscriptionId = subscriptionResponse.meta.last_row_id;
 
     if (features?.length) {
-      for (const feature of features) {
-        await this.DB.prepare(SUBSCRIPTION_QUERIES.INSERT_FEATURE)
-          .bind(feature.name, feature.description || null)
-          .run();
+      // 1. Insert all features (IGNORE if they already exist)
+      const featureInsertStatements = features.map((feature) =>
+        this.DB.prepare(SUBSCRIPTION_QUERIES.INSERT_FEATURE).bind(
+          feature.name,
+          feature.description || null,
+        ),
+      );
 
-        const featureIdResponse = await this.DB.prepare(
-          SUBSCRIPTION_QUERIES.SELECT_FEATURE_ID,
-        )
-          .bind(feature.name)
-          .all();
+      const insertBatchResults = await this.DB.batch(featureInsertStatements);
+      if (insertBatchResults.some((r) => !r.success)) {
+        throw new Error("Failed to insert some features");
+      }
 
-        if (!featureIdResponse.success || !featureIdResponse.results.length) {
+      // 2. Get IDs for all features
+      const featureNames = features.map((f) => f.name);
+      const featureIdResponse = await this.DB.prepare(
+        SUBSCRIPTION_QUERIES.SELECT_FEATURE_IDS(featureNames.length),
+      )
+        .bind(...featureNames)
+        .all();
+
+      if (!featureIdResponse.success || !featureIdResponse.results.length) {
+        throw new Error("Could not retrieve feature IDs");
+      }
+
+      const featureMap = new Map(
+        featureIdResponse.results.map((f) => [f.name, f.id]),
+      );
+
+      // 3. Link features to subscription
+      const relationshipStatements = features.map((feature) => {
+        const featureId = featureMap.get(feature.name);
+        if (!featureId) {
           throw new Error(`Could not get ID for feature: ${feature.name}`);
         }
-
-        const featureId = featureIdResponse.results[0].id;
-        const relationshipResponse = await this.DB.prepare(
+        return this.DB.prepare(
           SUBSCRIPTION_QUERIES.INSERT_SUBSCRIPTION_FEATURE,
-        )
-          .bind(subscriptionId, featureId)
-          .run();
+        ).bind(subscriptionId, featureId);
+      });
 
-        if (!relationshipResponse.success) {
-          throw new Error(
-            `Failed to link feature ${feature.name} to subscription`,
-          );
-        }
+      const relationshipBatchResults = await this.DB.batch(
+        relationshipStatements,
+      );
+      if (relationshipBatchResults.some((r) => !r.success)) {
+        throw new Error("Failed to link some features to subscription");
       }
     }
 
