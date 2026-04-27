@@ -15,7 +15,7 @@
     "test": "tsx --test src/lib/utils/subscription.test.ts"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "12.6.6",
+    "@astrojs/cloudflare": "12.6.13",
     "@astrojs/react": "4.3.0",
     "@astrojs/tailwind": "6.0.2",
     "@hookform/resolvers": "5.1.1",
@@ -27,7 +27,7 @@
     "@tanstack/react-table": "8.21.3",
     "@types/react": "19.0.10",
     "@types/react-dom": "19.0.4",
-    "astro": "5.14.8",
+    "astro": "6.1.6",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "lucide-react": "0.525.0",
@@ -41,7 +41,7 @@
     "@goldshore/env": "file:../../packages/env"
   },
   "devDependencies": {
-    "wrangler": "^4.42.2",
+    "wrangler": "^4.59.2",
     "tsx": "^4.19.2"
   }
 }
