@@ -1,10 +1,6 @@
 import {
   deriveSubscriptionStatus,
-  parseSubscriptionEndsAt,
-} from "@/lib/utils/subscription-status";
   ensureSubscriptionEndsAt,
-  hasSubscriptionExpired,
-  normalizeSubscriptionEndsAt,
   resolveSubscriptionEndsAt,
 } from "@/lib/utils/subscription";
 
@@ -45,30 +41,12 @@ const processCustomerSubscriptionResults = (rows) => {
 
   rows.forEach((row) => {
     if (!subscriptionsMap.has(row.id)) {
-      const subscriptionEndsAt = parseSubscriptionEndsAt(
-        row.subscription_ends_at,
-      );
-      const derivedStatus = deriveSubscriptionStatus(
-        row.status,
       const subscriptionEndsAt = resolveSubscriptionEndsAt(
         row.subscription_ends_at,
       );
 
       const customerSubscription = {
         id: row.id,
-        status: derivedStatus,
-        subscription_ends_at:
-          subscriptionEndsAt ?? row.subscription_ends_at ?? null,
-      const subscriptionEndsAt = normalizeSubscriptionEndsAt(
-        row.subscription_ends_at,
-      );
-      const status = hasSubscriptionExpired(row.subscription_ends_at)
-        ? "expired"
-        : row.status;
-
-      const customerSubscription = {
-        id: row.id,
-        status,
         status: deriveSubscriptionStatus(row.status, subscriptionEndsAt),
         subscription_ends_at: subscriptionEndsAt,
         customer: {
@@ -143,13 +121,6 @@ export class CustomerSubscriptionService {
       CUSTOMER_SUBSCRIPTION_QUERIES.INSERT_CUSTOMER_SUBSCRIPTION,
     )
       .bind(customer_id, subscription_id, status, normalizedEndsAt)
-      subscription_ends_at = Date.now() + 60 * 60 * 24 * 30, // 30 days from now by default
-    } = customerSubscriptionData;
-
-    const response = await this.DB.prepare(
-      CUSTOMER_SUBSCRIPTION_QUERIES.INSERT_CUSTOMER_SUBSCRIPTION,
-    )
-      .bind(customer_id, subscription_id, status, subscription_ends_at)
       .run();
 
     if (!response.success) {
@@ -183,10 +154,6 @@ export class CustomerSubscriptionService {
       CUSTOMER_SUBSCRIPTION_QUERIES.UPDATE_SUBSCRIPTION_ENDS_AT,
     )
       .bind(normalizedEndsAt, id)
-    const response = await this.DB.prepare(
-      CUSTOMER_SUBSCRIPTION_QUERIES.UPDATE_SUBSCRIPTION_ENDS_AT,
-    )
-      .bind(subscriptionEndsAt, id)
       .run();
 
     if (!response.success) {

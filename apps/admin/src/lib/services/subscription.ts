@@ -73,7 +73,6 @@ export class SubscriptionService {
   }
 
   async create(subscriptionData) {
-    console.log(subscriptionData);
     const { name, description, price, features } = subscriptionData;
 
     const subscriptionResponse = await this.DB.prepare(
